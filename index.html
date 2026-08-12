@@ -77,6 +77,10 @@
   .annotation { fill: var(--text-primary); font-size: 11.5px; font-weight: 600; }
   .bubble { fill: var(--series-1); stroke: var(--surface-1); stroke-width: 2px; cursor: pointer; }
   .bubble.muted { fill: var(--baseline); }
+  /* dense (full-league) scatters: translucent, hairline-edged marks so 250
+     overlapping points read as density instead of a solid gray mass */
+  .bubble.dense { opacity: 0.5; stroke-width: 0.75px; }
+  .bubble.dense:hover, .bubble.dense.hover { opacity: 1; }
   .bubble:hover, .bubble.hover { fill: var(--series-1-dark); }
   .badge-text { fill: var(--series-1-ink); font-size: 9.5px; font-weight: 600; text-anchor: middle; pointer-events: none; }
   .badge-text.muted { fill: var(--text-secondary); }
@@ -281,8 +285,24 @@ function drawDivergingBar(container, cfg) {
   renderOnce();
 }
 
-function resolveCollisions(points, r, padding) {
+function resolveCollisions(points, r, padding, bounds) {
+  // bounds: optional {width, height} of the plot area. Without it, a dense
+  // cluster (e.g. 249 players packed into the bottom-left corner of a
+  // per-96 chart) inflates outward until it escapes the axes entirely --
+  // points end up drawn below the x-axis and left of the y-axis, i.e. "off
+  // the chart". Clamping INSIDE the loop (rather than once at the end) means
+  // a point pinned against an edge still pushes its neighbors, so the
+  // cluster spreads along the edge instead of stacking on top of it.
   const minDist = r * 2 + padding;
+  const lo = r + 1;
+  const hiX = bounds ? bounds.width - r - 1 : Infinity;
+  const hiY = bounds ? bounds.height - r - 1 : Infinity;
+  const clamp = (p) => {
+    if (!bounds) return;
+    p.x = Math.max(lo, Math.min(hiX, p.x));
+    p.y = Math.max(lo, Math.min(hiY, p.y));
+  };
+  points.forEach(clamp);
   for (let iter = 0; iter < 300; iter++) {
     let moved = false;
     for (let i = 0; i < points.length; i++) {
@@ -296,6 +316,7 @@ function resolveCollisions(points, r, padding) {
           const ux = dx / dist, uy = dy / dist;
           a.x -= ux * push; a.y -= uy * push;
           b.x += ux * push; b.y += uy * push;
+          clamp(a); clamp(b);
           moved = true;
         }
       }
@@ -352,19 +373,31 @@ function drawScatter(container, cfg) {
     // e.g. xG Against, so "up" reads as "good" on both axes at once)
     const yScale = cfg.invertY ? (v => ((v - yScaleMin) / (yScaleMax - yScaleMin)) * height) : (v => height - ((v - yScaleMin) / (yScaleMax - yScaleMin)) * height);
 
-    ticksFor(xScaleMin, xScaleMax, 8).forEach(t => g.appendChild(el("line", {class: "gridline", x1: xScale(t), x2: xScale(t), y1: 0, y2: height})));
-    ticksFor(yScaleMin, yScaleMax, 8).forEach(t => g.appendChild(el("line", {class: "gridline", x1: 0, x2: width, y1: yScale(t), y2: yScale(t)})));
+    // Tick precision follows the tick STEP, not a fixed 2 decimals: season xG
+     // totals step by 5 and want "20", while a per-96 g+ axis steps by 0.05 and
+    // needs "0.05". Same helper for both axes so they stay consistent.
+    const xTicks = ticksFor(xScaleMin, xScaleMax, 8);
+    const yTicks = ticksFor(yScaleMin, yScaleMax, 8);
+    const fmtFor = (ticks) => {
+      const step = ticks.length > 1 ? Math.abs(ticks[1] - ticks[0]) : 1;
+      const dp = Math.min(3, Math.max(0, Math.ceil(-Math.log10(step))));
+      return (t) => (t === 0 ? "0" : t.toFixed(dp));
+    };
+    const fmtX = fmtFor(xTicks), fmtY = fmtFor(yTicks);
+
+    xTicks.forEach(t => g.appendChild(el("line", {class: "gridline", x1: xScale(t), x2: xScale(t), y1: 0, y2: height})));
+    yTicks.forEach(t => g.appendChild(el("line", {class: "gridline", x1: 0, x2: width, y1: yScale(t), y2: yScale(t)})));
 
     const xAxis = el("g", {class: "axis", transform: `translate(0,${height})`});
-    ticksFor(xScaleMin, xScaleMax, 8).forEach(t => {
-      const txt = el("text", {x: xScale(t), y: 18, "text-anchor": "middle"}); txt.textContent = t.toFixed(t === 0 ? 0 : 2); xAxis.appendChild(txt);
+    xTicks.forEach(t => {
+      const txt = el("text", {x: xScale(t), y: 18, "text-anchor": "middle"}); txt.textContent = fmtX(t); xAxis.appendChild(txt);
     });
     xAxis.appendChild(el("line", {x1: 0, x2: width, y1: 0, y2: 0}));
     g.appendChild(xAxis);
 
     const yAxis = el("g", {class: "axis"});
-    ticksFor(yScaleMin, yScaleMax, 8).forEach(t => {
-      const txt = el("text", {x: -10, y: yScale(t) + 4, "text-anchor": "end"}); txt.textContent = t.toFixed(t === 0 ? 0 : 2); yAxis.appendChild(txt);
+    yTicks.forEach(t => {
+      const txt = el("text", {x: -10, y: yScale(t) + 4, "text-anchor": "end"}); txt.textContent = fmtY(t); yAxis.appendChild(txt);
     });
     yAxis.appendChild(el("line", {x1: 0, x2: 0, y1: 0, y2: height}));
     g.appendChild(yAxis);
@@ -383,18 +416,16 @@ function drawScatter(container, cfg) {
       g.appendChild(el("line", {class: "refline", x1: 0, x2: width, y1: yScale(medY), y2: yScale(medY)}));
     }
 
-    // true data positions, then nudge apart only enough to stop overlap
+    // Dense pool (full league, 100-250+ players): plot TRUE positions and let
+    // overlap read as density, with translucent marks. Collision-nudging that
+    // many points does two bad things -- it inflates the cluster until points
+    // sit outside the axes entirely, and what's left is a rigid lattice that
+    // no longer shows where anyone actually is. Nudging is still right for the
+    // small labeled charts (16 teams, ~20 keepers), where a legible 3-letter
+    // badge matters more than sub-pixel position accuracy.
+    const dense = cfg.showBadges === false || data.length > 80;
     const points = data.map(d => ({x: xScale(d.x), y: yScale(d.y), d}));
-    resolveCollisions(points, R, 3);
-    // Clamp nudged positions to stay within chart bounds so collision avoidance
-    // doesn't push bubbles completely off-screen. Keeping label positions within
-    // bounds while showing leader lines to actual data positions is better UX than
-    // having labels vanish entirely when densely packed (e.g. 249 players on one chart).
-    const padding = R + 2;
-    points.forEach(p => {
-      p.x = Math.max(padding, Math.min(width - padding, p.x));
-      p.y = Math.max(padding, Math.min(height - padding, p.y));
-    });
+    if (!dense) resolveCollisions(points, R, 3, {width, height});
 
     const hasHighlight = data.some(d => d.highlight);
 
@@ -411,11 +442,24 @@ function drawScatter(container, cfg) {
           stroke: "var(--baseline)", "stroke-width": 1, "stroke-dasharray": "2 2",
         }));
       }
-      const circle = el("circle", {class: "bubble" + (isMuted ? " muted" : ""), r: R});
-      const label = el("text", {class: "badge-text" + (isMuted ? " muted" : ""), dy: "0.32em", "text-anchor": "middle"});
-      label.textContent = d.badge;
+      // In dense mode the emphasized point is drawn larger so the one point the
+      // title is about still wins the eye at a glance (Design Guidelines: size
+      // and color are both preattentive; the muted crowd gets neither).
+      const rr = (dense && d.highlight) ? R * 1.9 : R;
+      const circle = el("circle", {
+        class: "bubble" + (isMuted ? " muted" : "") + (dense && isMuted ? " dense" : ""), r: rr,
+      });
       node.appendChild(circle);
-      node.appendChild(label);
+      // cfg.showBadges === false means the pool is too dense for an always-on
+      // 3-letter team badge on every bubble (chart_builders.scatter_display_params
+      // decides this past ~40 points): a 249-player chart turns into unreadable
+      // label soup and the labels overflow their own bubbles. In that mode only
+      // the emphasized point keeps a badge; everyone else is identified on hover.
+      if (cfg.showBadges !== false || d.highlight) {
+        const label = el("text", {class: "badge-text" + (isMuted ? " muted" : ""), dy: "0.32em", "text-anchor": "middle"});
+        label.textContent = d.badge;
+        node.appendChild(label);
+      }
 
       if (d.highlight && d.annotation) {
         // Prefer placing the annotation beside the bubble (right, or left if
