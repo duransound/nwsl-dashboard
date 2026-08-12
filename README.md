@@ -56,6 +56,16 @@ rather than presented as equally-weighted views.
 - **`.gitignore`** — excludes `.venv/`, `history/`, and other local-only
   files from the GitHub Pages repo, so only the actual site and source code
   get pushed.
+- **`statsbomb_data.py`** / **`build_shot_map_chart.py`** / **`shot_map_demo.html`**
+  — a real shot map (pitch diagram, shot locations, dot size = xG) built from
+  StatsBomb's free open NWSL event data (2018 and 2023 seasons only — that's
+  the entirety of StatsBomb's NWSL coverage). Standalone, not a tab on the
+  main dashboard yet — see "Round 10" below.
+- **`nwslr_data.py`** / **`build_historical_trend_chart.py`** /
+  **`historical_trends_demo.html`** — multi-season historical trends
+  (2013-2019, the years before ASA's API coverage starts) from the nwslR
+  project's public data, read directly with pandas (no R needed). Also
+  standalone for now — see "Round 10" below.
 
 ## Run it yourself
 
@@ -144,7 +154,7 @@ Duarte's "what is, then what's the point" structure, with the one
 interactive/exploratory tab placed last since it isn't leading with a
 single finding.
 
-### Round 10 additions (2026-08-12)
+### Round 11 additions (2026-08-12)
 
 - **Team Goals Added** (new tab) — Goals Added (g+) summed across every
   action type at the team level, net of what the team conceded to
@@ -246,6 +256,57 @@ same locked-down network as everything else there. Rewriting it as
 dependency-free vanilla JS fixed that, and as a side effect makes the
 shipped file more portable for you too: no CDN outage or ad-blocker can ever
 break it.
+
+## Round 10: StatsBomb shot map and nwslR historical trends (2026-08-12)
+
+Two more data sources beyond ASA, wired in as real working code rather than
+just documented as options — the "shot maps" and "multi-season trends"
+items that had been sitting in Natural Next Steps since round 1, closed by
+going to sources ASA's API simply doesn't have.
+
+- **StatsBomb Open Data** (`statsbomb_data.py`) — free, GitHub-hosted,
+  shot-by-shot event data with pitch coordinates. ASA's API has no
+  shot-location field at all, so a real shot map was never going to come
+  from ASA data. Coverage is narrow — StatsBomb has published exactly two
+  NWSL seasons, **2018 and 2023** — but where it's available, it's the real
+  professional data model (the same one StatsBomb sells to clubs), not an
+  aggregate. Pulled via a targeted `git sparse-checkout` of individual files
+  rather than a full clone (the repo holds many other competitions) or the
+  `statsbombpy` PyPI wrapper.
+- **`build_shot_map_chart.py`** → `shot_map_demo.html` — a pitch diagram
+  (shot locations, dot size = xG, filled = goal) for the 2023 NWSL
+  Championship Final by default; `--match-id`/`--season`/`--list-matches`
+  picks any other 2018 or 2023 match. The headline is computed dynamically
+  (the goal with the lowest xG — currently Esther González's 46th-minute
+  winner in the Final, a 7% chance).
+- **nwslR** (`nwslr_data.py`) — historical NWSL data covering **2013
+  (league inception) through 2019**, read straight from the R package's
+  `data-raw/` CSV/Excel source files with pandas — no R installation
+  needed. Includes three now-defunct clubs (Boston Breakers, FC Kansas
+  City, Western New York Flash) that predate the league's current 16-team
+  footprint.
+- **`build_historical_trend_chart.py`** → `historical_trends_demo.html` —
+  two tabs: league-wide goals scored per season 2013-2019 (peak season
+  highlighted, computed live), and a season-picker bar chart of every
+  team's goals that year.
+- **New shared chart types** in `dashboard_template.py`: `drawLine` (single-
+  series line chart, one point per season), `drawSeasonCompare` (the same
+  dropdown-driven pattern as `drawTeamCompare`, but the picker selects a
+  season instead of a team), and `drawShotMap` (a pitch diagram in
+  StatsBomb's 0-120×0-80 coordinate system, shots normalized to always
+  attack the same goal regardless of which end they were actually taken
+  at). `drawDivergingBar` also gained an opt-in `oneSided` flag — for
+  data that's never negative (like season goal totals), it skips the
+  diverging ±max axis instead of showing pointless negative-axis
+  gridlines, which is exactly the kind of chartjunk the Design Guidelines
+  doc warns against.
+- **These two charts are standalone HTML files, not new tabs on the main
+  dashboard** — a deliberate scope call, since they pull from entirely
+  different infrastructure (git sparse-clone vs. the ASA REST API) and
+  aren't on the same weekly-refresh cadence (both sources are static).
+  Merging them into `dashboard_demo.html`'s tab order is a natural next
+  step (see "Where to go next") once there's a decision on where they fit
+  in the "what is → what could be" sequencing rule.
 
 ## Automating the weekly refresh
 
@@ -399,7 +460,7 @@ here's the honest gap between what you have now and that:
    doesn't need to be rebuilt, just extended (more chart types, filters,
    routing between views if it grows beyond tabs).
 2. **The missing piece is live data in the browser itself, and CORS is the
-   real blocker here (round 10 update).** Right now the Python script
+   real blocker here (round 11 update).** Right now the Python script
    fetches data and bakes it into the HTML at *build* time. A real webapp
    would fetch from the ASA API at *page-load* time instead, via `fetch()`
    in the browser. This round couldn't test that directly — the cloud
@@ -442,27 +503,46 @@ here's the honest gap between what you have now and that:
   https://github.com/American-Soccer-Analysis/itscalledsoccer-r
 - **R-native NWSL datasets:** the `nwslR` package —
   https://github.com/adror1/nwslR — useful for historical play-by-play and
-  roster data that isn't in the ASA API.
-- **Team-level Goals Added is done** (round 10, see above) — this kit
+  roster data that isn't in the ASA API. Already wired in, see "Round 10"
+  above.
+- **StatsBomb Open Data** — free, shot-by-shot event data (2018 and 2023
+  NWSL seasons only) — https://github.com/statsbomb/open-data. Already
+  wired in, see "Round 10" above.
+- **Team-level Goals Added is done** (round 11, see above) — this kit
   previously only had player-level.
-- **Shot maps and an xG-race (cumulative xG during a match) chart are not
-  possible with this API, confirmed round 10** — not "need a different
-  endpoint," genuinely absent. Checked ASA's own wrapper method lists
-  (`itscalledsoccer`, Python and R) and there's no shot-location/coordinate
-  method and no play-by-play/event method anywhere in the package. The
-  closest thing available is `/games` (final scores, dates, opponents) and
-  `/games/xgoals` (final match xG totals per team, e.g. home/away xgoals,
-  xpoints) — enough for a "results vs. underlying xG" match-by-match view,
-  but not a shot-by-shot map or a minute-by-minute race line.
-- **Multi-season trends are feasible and unexplored** — confirmed round 10
-  that `/games` (and by extension the xgoals/goals-added endpoints) cover
-  **2021 through the current 2026 season**, six seasons of NWSL data, for
-  a team or player you're tracking over time.
-- A **match-level "results vs. xG" view** using `/games` + `/games/xgoals`
-  together (e.g. which results most over/underperformed the underlying
-  numbers) is a scoped, ready-to-build next chart based on the round-10 API
-  investigation above — not built yet, but the endpoints and fields needed
-  are confirmed.
+- **Shot maps are done, via StatsBomb, not ASA** (round 10) — worth being
+  precise about which data source: ASA's API genuinely has no
+  shot-location field at all (confirmed by checking `itscalledsoccer`'s
+  full method list, Python and R — no shot-coordinate or play-by-play
+  method anywhere in the package), so a shot map was never going to come
+  from the ASA-based scripts in this kit. StatsBomb's open data does have
+  shot coordinates, which is what `build_shot_map_chart.py` uses — but
+  StatsBomb has only published two full NWSL seasons (2018, 2023), so this
+  won't extend to arbitrary recent matches the way the ASA-based charts do.
+- **An xG-race (cumulative xG during a live match) chart is still not
+  buildable from either source** — StatsBomb's event data has shot-level
+  detail *within* a match (so this is technically the closer source), but
+  wasn't built this round; `drawLine` (round 10) could support it with
+  multiple points per match instead of one point per season if a future
+  round wants to build it from `statsbomb_data.py`'s per-match events.
+  Separately, confirmed (round 11) that ASA's own `/games/xgoals` endpoint
+  only has final match xG totals, not a shot-by-shot timeline, so that
+  source specifically can't do this at all.
+- **Multi-season trends now exist two ways**: nwslR covers 2013-2019 (see
+  "Round 10" above, already built into `historical_trends_demo.html`), and
+  separately, ASA's own API was confirmed (round 11) to cover **2021
+  through the current season** via `/games` and the xgoals/goals-added
+  endpoints — unexplored territory for a team or player you're tracking
+  year over year within that more recent window.
+- A **match-level "results vs. xG" view** using ASA's `/games` +
+  `/games/xgoals` together (e.g. which results most over/underperformed
+  the underlying numbers, for any season 2021+) is a scoped, ready-to-build
+  next chart based on the round-11 API investigation above — not built
+  yet, but the endpoints and fields needed are confirmed.
+- **Merge the round-10 shot map and historical trends charts into the main
+  `dashboard_demo.html`/`index.html`** instead of leaving them as separate
+  standalone files (see "Round 10" above for why they were left standalone
+  for now) — needs a decision on tab placement.
 
 ## Note on the sandbox that built this
 

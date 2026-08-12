@@ -5,7 +5,8 @@
 <title>NWSL 2026 Analytics Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Karla:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Karla:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Cg transform='translate(100,100)'%3E%3Cg transform='rotate(0)'%3E%3Cpath fill='%23C98A2E' stroke='%231F1B16' stroke-width='4' d='M0,0 C-22,-11 -37,-33 -33,-55 C-29,-75 29,-75 33,-55 C37,-33 22,-11 0,0 Z'/%3E%3C/g%3E%3Cg transform='rotate(90)'%3E%3Cpath fill='%23C98A2E' stroke='%231F1B16' stroke-width='4' d='M0,0 C-22,-11 -37,-33 -33,-55 C-29,-75 29,-75 33,-55 C37,-33 22,-11 0,0 Z'/%3E%3C/g%3E%3Cg transform='rotate(180)'%3E%3Cpath fill='%23C98A2E' stroke='%231F1B16' stroke-width='4' d='M0,0 C-22,-11 -37,-33 -33,-55 C-29,-75 29,-75 33,-55 C37,-33 22,-11 0,0 Z'/%3E%3C/g%3E%3Cg transform='rotate(270)'%3E%3Cpath fill='%23C98A2E' stroke='%231F1B16' stroke-width='4' d='M0,0 C-22,-11 -37,-33 -33,-55 C-29,-75 29,-75 33,-55 C37,-33 22,-11 0,0 Z'/%3E%3C/g%3E%3Ccircle r='10' fill='%231F1B16'/%3E%3C/g%3E%3C/svg%3E">
 <style>
   :root {
     color-scheme: light;
@@ -22,10 +23,19 @@
     --red: #e34948;
     --font-body: 'Karla', system-ui, -apple-system, "Segoe UI", sans-serif;
     --font-head: 'Space Grotesk', system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-brand: 'Fraunces', Georgia, serif;
+    --brand-amber: #C98A2E;
+    --brand-ink: #1F1B16;
+    --brand-clay: #B5573F;
+    --brand-warmgray: #8C8377;
   }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: var(--font-body); background: var(--page); color: var(--text-primary); }
   .app { max-width: 960px; margin: 0 auto; padding: 28px 24px 48px; text-align: left; }
+  .masthead { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
+  .masthead-mark { width: 36px; height: 36px; flex: none; }
+  .masthead-word { font-family: var(--font-brand); font-weight: 600; font-size: 16px; color: var(--brand-ink); letter-spacing: -0.01em; }
+  .app-header { border-top: 1px solid var(--grid); padding-top: 18px; }
   .app-header h1 { font-family: var(--font-head); font-weight: 500; font-size: 21px; margin: 0 0 4px; }
   .app-header p { font-size: 13px; color: var(--text-secondary); margin: 0 0 20px; max-width: 660px; }
   .tabs { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--grid); margin-bottom: 20px; }
@@ -79,10 +89,48 @@
   .legend { display: flex; gap: 16px; font-size: 11.5px; color: var(--text-secondary); margin-bottom: 10px; }
   .legend-item { display: flex; align-items: center; gap: 6px; }
   .legend-swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .line-path { fill: none; stroke: var(--series-1); stroke-width: 2.5px; }
+  .line-dot { fill: var(--series-1); stroke: var(--surface-1); stroke-width: 2px; cursor: pointer; }
+  .line-dot:hover { fill: var(--series-1-dark); }
+  .pitch-outline { fill: none; stroke: var(--baseline); stroke-width: 1.5px; }
+  .pitch-line { fill: none; stroke: var(--baseline); stroke-width: 1px; }
+  .shot-dot { stroke: var(--series-1); stroke-width: 1.5px; cursor: pointer; }
+  .shot-dot.goal { fill: var(--series-1); }
+  .shot-dot.no-goal { fill: var(--surface-1); }
+  .shot-dot.muted { stroke: var(--baseline); }
+  .shot-dot.muted.no-goal { fill: var(--surface-1); }
 </style>
 </head>
 <body>
 <div class="app">
+  <div class="masthead">
+    <svg class="masthead-mark" viewBox="0 0 240 240" aria-hidden="true">
+      <g stroke="#B5573F" fill="none" stroke-linecap="round" opacity="0.6">
+        <path d="M6,74 L234,74" stroke-width="2"/>
+        <path d="M6,74 C34,46 52,20 68,20 C92,20 96,54 120,58 C144,54 148,20 172,20 C188,20 206,46 234,74" stroke-width="2"/>
+        <line x1="63" y1="72" x2="63" y2="20" stroke-width="3"/>
+        <line x1="73" y1="72" x2="73" y2="20" stroke-width="3"/>
+        <line x1="63" y1="34" x2="73" y2="34" stroke-width="2"/>
+        <line x1="63" y1="52" x2="73" y2="52" stroke-width="2"/>
+        <line x1="167" y1="72" x2="167" y2="20" stroke-width="3"/>
+        <line x1="177" y1="72" x2="177" y2="20" stroke-width="3"/>
+        <line x1="167" y1="34" x2="177" y2="34" stroke-width="2"/>
+        <line x1="167" y1="52" x2="177" y2="52" stroke-width="2"/>
+      </g>
+      <path fill="none" stroke="#8C8377" stroke-width="1.5" opacity="0.25" stroke-linecap="round" d="M-10,80 C40,72 80,88 120,80 C160,72 200,88 250,80"/>
+      <path fill="none" stroke="#8C8377" stroke-width="1.5" opacity="0.35" stroke-linecap="round" d="M-10,195 C40,183 80,207 120,195 C160,183 200,207 250,195"/>
+      <path fill="none" stroke="#8C8377" stroke-width="2" opacity="0.55" stroke-linecap="round" d="M-10,210 C40,196 90,224 130,210 C170,196 210,224 250,210"/>
+      <path fill="none" stroke="#8C8377" stroke-width="2.5" opacity="0.8" stroke-linecap="round" d="M-10,226 C40,210 90,240 130,226 C170,210 220,240 250,226"/>
+      <g transform="translate(120,150)">
+        <g transform="rotate(0)"><path fill="#C98A2E" stroke="#1F1B16" stroke-width="2.5" d="M0,0 C-20,-10 -34,-30 -30,-50 C-26,-68 26,-68 30,-50 C34,-30 20,-10 0,0 Z"/></g>
+        <g transform="rotate(90)"><path fill="#C98A2E" stroke="#1F1B16" stroke-width="2.5" d="M0,0 C-20,-10 -34,-30 -30,-50 C-26,-68 26,-68 30,-50 C34,-30 20,-10 0,0 Z"/></g>
+        <g transform="rotate(180)"><path fill="#C98A2E" stroke="#1F1B16" stroke-width="2.5" d="M0,0 C-20,-10 -34,-30 -30,-50 C-26,-68 26,-68 30,-50 C34,-30 20,-10 0,0 Z"/></g>
+        <g transform="rotate(270)"><path fill="#C98A2E" stroke="#1F1B16" stroke-width="2.5" d="M0,0 C-20,-10 -34,-30 -30,-50 C-26,-68 26,-68 30,-50 C34,-30 20,-10 0,0 Z"/></g>
+        <circle r="8" fill="#1F1B16"/>
+      </g>
+    </svg>
+    <span class="masthead-word">Poppies in the Fog</span>
+  </div>
   <div class="app-header">
     <h1>NWSL 2026 Analytics Dashboard</h1>
     <p>Team and player xG stats from the American Soccer Analysis API — each tab leads with the finding, not just the metric. Demo build; see footnotes for exact scope.</p>
@@ -140,17 +188,25 @@ function drawDivergingBar(container, cfg) {
   svg.appendChild(g);
   container.appendChild(svg);
 
+  // oneSided: for data that's never negative (e.g. goals scored), skip the
+  // diverging -max..max axis -- showing unused negative ticks for a value
+  // that literally can't go negative is exactly the chartjunk the Design
+  // Guidelines doc calls out. Scale 0..max and start bars at the left edge
+  // instead of a center zero line.
+  const oneSided = cfg.oneSided && data.every(d => d.value >= 0);
   const maxAbs = Math.max(...data.map(d => Math.abs(d.value))) * 1.15 || 1;
-  const x = v => (v / maxAbs) * (width / 2) + width / 2;
+  const x = oneSided ? (v => (v / maxAbs) * width) : (v => (v / maxAbs) * (width / 2) + width / 2);
   const zeroX = x(0);
 
-  ticksFor(-maxAbs, maxAbs, 6).forEach(t => {
+  ticksFor(oneSided ? 0 : -maxAbs, maxAbs, oneSided ? 5 : 6).forEach(t => {
     g.appendChild(el("line", {class: "gridline", x1: x(t), x2: x(t), y1: -4, y2: height + 4}));
     const label = el("text", {class: "axis-label", x: x(t), y: height + 20, "text-anchor": "middle"});
     label.textContent = t;
     g.appendChild(label);
   });
-  g.appendChild(el("line", {x1: zeroX, x2: zeroX, y1: -4, y2: height + 4, stroke: "var(--baseline)", "stroke-width": 1}));
+  if (!oneSided) {
+    g.appendChild(el("line", {x1: zeroX, x2: zeroX, y1: -4, y2: height + 4, stroke: "var(--baseline)", "stroke-width": 1}));
+  }
 
   const hasHighlight = data.some(d => d.highlight);
 
@@ -174,7 +230,7 @@ function drawDivergingBar(container, cfg) {
     g.appendChild(label);
 
     if (d.highlight) {
-      const sign = d.value >= 0 ? "+" : "";
+      const sign = (!oneSided && d.value >= 0) ? "+" : "";
       const annoX = x(d.value) + (d.value < 0 ? -8 : 8);
       const anno = el("text", {
         class: "annotation", x: annoX, y: y + (rowH - 8) / 2 + 4,
@@ -417,6 +473,188 @@ function el2(tag, attrs) {
   return e;
 }
 
+function drawLine(container, cfg) {
+  // Single-series line chart -- e.g. a league-wide total plotted one point
+  // per season. One highlighted point (per the highlight/mute convention
+  // used everywhere else in this dashboard) gets a static annotation; every
+  // other point is a plain series-color dot with no callout.
+  const margin = {top: 16, right: 28, bottom: 40, left: 50};
+  const width = 780 - margin.left - margin.right;
+  const height = (cfg.height || 340) - margin.top - margin.bottom;
+
+  const svg = el("svg", {width: width + margin.left + margin.right, height: height + margin.top + margin.bottom});
+  const g = el("g", {transform: `translate(${margin.left},${margin.top})`});
+  svg.appendChild(g);
+  container.appendChild(svg);
+
+  const xs = cfg.data.map(d => d.x);
+  const ys = cfg.data.map(d => d.y);
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  const yMax = Math.max(...ys) * 1.15 || 1;
+  const xScale = v => ((v - xMin) / (xMax - xMin || 1)) * width;
+  const yScale = v => height - (v / yMax) * height;
+
+  ticksFor(0, yMax, 5).forEach(t => {
+    g.appendChild(el("line", {class: "gridline", x1: 0, x2: width, y1: yScale(t), y2: yScale(t)}));
+    const label = el("text", {class: "axis-label", x: -10, y: yScale(t) + 4, "text-anchor": "end"});
+    label.textContent = t;
+    g.appendChild(label);
+  });
+
+  const xAxis = el("g", {class: "axis", transform: `translate(0,${height})`});
+  cfg.data.forEach(d => {
+    const txt = el("text", {x: xScale(d.x), y: 18, "text-anchor": "middle"});
+    txt.textContent = d.xLabel !== undefined ? d.xLabel : d.x;
+    xAxis.appendChild(txt);
+  });
+  xAxis.appendChild(el("line", {x1: 0, x2: width, y1: 0, y2: 0}));
+  g.appendChild(xAxis);
+
+  const pathD = cfg.data.map((d, i) => `${i === 0 ? "M" : "L"}${xScale(d.x)},${yScale(d.y)}`).join(" ");
+  g.appendChild(el("path", {class: "line-path", d: pathD}));
+
+  cfg.data.forEach(d => {
+    const cx = xScale(d.x), cy = yScale(d.y);
+    const dot = el("circle", {class: "line-dot", cx: cx, cy: cy, r: d.highlight ? 6 : 4.5});
+    dot.addEventListener("mouseenter", (event) => showTooltip(d.tooltip || `<div class="row">${d.y}</div>`, event));
+    dot.addEventListener("mousemove", moveTooltip);
+    dot.addEventListener("mouseleave", hideTooltip);
+    g.appendChild(dot);
+
+    if (d.highlight && d.annotation) {
+      const above = cy > 24;
+      const anno = el("text", {
+        class: "annotation", x: cx, y: above ? cy - 14 : cy + 22, "text-anchor": "middle",
+      });
+      anno.textContent = d.annotation;
+      g.appendChild(anno);
+    }
+  });
+
+  const xLabel = el("text", {class: "axis-label", x: width / 2, y: height + 34, "text-anchor": "middle"});
+  xLabel.textContent = cfg.xAxisLabel || "";
+  g.appendChild(xLabel);
+  const yLabel = el("text", {class: "axis-label", transform: "rotate(-90)", x: -height / 2, y: -34, "text-anchor": "middle"});
+  yLabel.textContent = cfg.yAxisLabel || "";
+  g.appendChild(yLabel);
+}
+
+function drawSeasonCompare(container, cfg) {
+  // Same dropdown-driven pattern as drawTeamCompare, but the picker
+  // selects a SEASON instead of a team, and the bar chart shows every
+  // team's value for that season.
+  const pickerRow = document.createElement("div");
+  pickerRow.className = "picker-row";
+
+  const seasonGroup = document.createElement("div");
+  seasonGroup.className = "picker-group";
+  const seasonLabel = document.createElement("div");
+  seasonLabel.className = "picker-label";
+  seasonLabel.textContent = "Season";
+  const seasonSelect = document.createElement("select");
+  cfg.seasons.forEach(s => {
+    const opt = el2("option", {value: s});
+    opt.textContent = s;
+    seasonSelect.appendChild(opt);
+  });
+  seasonSelect.value = cfg.seasons[cfg.seasons.length - 1];
+  seasonGroup.appendChild(seasonLabel);
+  seasonGroup.appendChild(seasonSelect);
+  pickerRow.appendChild(seasonGroup);
+  container.appendChild(pickerRow);
+
+  const chartMount = document.createElement("div");
+  container.appendChild(chartMount);
+  const caption = document.createElement("p");
+  caption.className = "compare-caption";
+  container.appendChild(caption);
+
+  function render() {
+    chartMount.innerHTML = "";
+    const season = seasonSelect.value;
+    const rows = cfg.bySeason[season] || [];
+    if (rows.length === 0) { caption.textContent = "No data for this season."; return; }
+    const sorted = [...rows].sort((a, b) => b.value - a.value);
+    const top = sorted[0];
+    drawDivergingBar(chartMount, {
+      data: rows.map(r => ({label: r.label, value: r.value, highlight: r.label === top.label})),
+      valueLabel: cfg.valueLabel, xAxisLabel: cfg.valueLabel, oneSided: true,
+    });
+    caption.textContent = `${season}: ${top.label} led the league with ${top.value} ${cfg.valueLabel.toLowerCase()}.`;
+  }
+
+  seasonSelect.addEventListener("change", render);
+  render();
+}
+
+function drawShotMap(container, cfg) {
+  // Pitch diagram in StatsBomb's coordinate system (0-120 long, 0-80
+  // wide), shots normalized to attack rightward so they cluster near the
+  // right-hand goal regardless of which literal end they were taken at.
+  // Filled dot = goal, hollow dot = anything else; dot radius scales with
+  // xG, so a glance at size alone tells you how "clean" a chance was.
+  const margin = {top: 10, right: 16, bottom: 16, left: 16};
+  const width = 720;
+  const height = width * (80 / 120);
+  const svg = el("svg", {width: width + margin.left + margin.right, height: height + margin.top + margin.bottom});
+  const g = el("g", {transform: `translate(${margin.left},${margin.top})`});
+  svg.appendChild(g);
+  container.appendChild(svg);
+
+  const xScale = v => (v / 120) * width;
+  const yScale = v => (v / 80) * height;
+
+  // pitch outline + key markings (attacking half is what matters here, but
+  // draw the full pitch for context/orientation)
+  g.appendChild(el("rect", {class: "pitch-outline", x: 0, y: 0, width: width, height: height, rx: 2}));
+  g.appendChild(el("line", {class: "pitch-line", x1: xScale(60), x2: xScale(60), y1: 0, y2: height}));
+  g.appendChild(el("circle", {class: "pitch-line", cx: xScale(60), cy: yScale(40), r: xScale(10) - xScale(0)}));
+  // 18-yard box + 6-yard box + goal, right-hand (attacking) end only
+  g.appendChild(el("rect", {class: "pitch-line", x: xScale(102), y: yScale(18), width: xScale(18) - xScale(0), height: yScale(62) - yScale(18)}));
+  g.appendChild(el("rect", {class: "pitch-line", x: xScale(114), y: yScale(30), width: xScale(6) - xScale(0), height: yScale(50) - yScale(30)}));
+  g.appendChild(el("line", {class: "pitch-outline", x1: width, x2: width, y1: yScale(36), y2: yScale(44), stroke: "var(--series-1)", "stroke-width": 3}));
+
+  const hasHighlight = cfg.data.some(d => d.highlight);
+  const maxXg = Math.max(...cfg.data.map(d => d.xg)) || 0.1;
+
+  cfg.data.forEach(d => {
+    // normalize direction: shots taken in the defensive half are mirrored
+    // so every shot renders as if attacking the same (right-hand) goal
+    const flip = d.x < 60;
+    const px = flip ? 120 - d.x : d.x;
+    const py = flip ? 80 - d.y : d.y;
+    const isMuted = hasHighlight && !d.highlight;
+    const r = 4 + Math.sqrt(d.xg / maxXg) * 11;
+    const dot = el("circle", {
+      class: "shot-dot " + (d.outcome === "Goal" ? "goal" : "no-goal") + (isMuted ? " muted" : ""),
+      cx: xScale(px), cy: yScale(py), r: r,
+    });
+    dot.addEventListener("mouseenter", (event) => showTooltip(d.tooltip, event));
+    dot.addEventListener("mousemove", moveTooltip);
+    dot.addEventListener("mouseleave", hideTooltip);
+    g.appendChild(dot);
+
+    if (d.highlight && d.annotation) {
+      const anchorRight = xScale(px) < width - 160;
+      const anno = el("text", {
+        class: "annotation", x: xScale(px) + (anchorRight ? r + 8 : -(r + 8)), y: yScale(py) + 4,
+        "text-anchor": anchorRight ? "start" : "end",
+      });
+      anno.textContent = d.annotation;
+      g.appendChild(anno);
+    }
+  });
+
+  const legend = document.createElement("div");
+  legend.className = "legend";
+  legend.innerHTML = `
+    <div class="legend-item"><span class="legend-swatch" style="background:var(--series-1);"></span>Goal</div>
+    <div class="legend-item"><span class="legend-swatch" style="background:var(--surface-1); border:1.5px solid var(--series-1);"></span>No goal</div>
+    <div class="legend-item">Dot size = xG</div>
+  `;
+  container.insertBefore(legend, svg);
+}
+
 // ---------- build tabs + panels ----------
 const tabsEl = document.getElementById("tabs");
 const panelsEl = document.getElementById("panels");
@@ -443,6 +681,9 @@ CHARTS.forEach((chart, i) => {
   if (chart.type === "diverging-bar") drawDivergingBar(mount, chart);
   if (chart.type === "scatter") drawScatter(mount, chart);
   if (chart.type === "team-compare") drawTeamCompare(mount, chart);
+  if (chart.type === "line") drawLine(mount, chart);
+  if (chart.type === "season-compare") drawSeasonCompare(mount, chart);
+  if (chart.type === "shot-map") drawShotMap(mount, chart);
 });
 </script>
 </body>
