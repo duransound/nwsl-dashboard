@@ -386,6 +386,15 @@ function drawScatter(container, cfg) {
     // true data positions, then nudge apart only enough to stop overlap
     const points = data.map(d => ({x: xScale(d.x), y: yScale(d.y), d}));
     resolveCollisions(points, R, 3);
+    // Clamp nudged positions to stay within chart bounds so collision avoidance
+    // doesn't push bubbles completely off-screen. Keeping label positions within
+    // bounds while showing leader lines to actual data positions is better UX than
+    // having labels vanish entirely when densely packed (e.g. 249 players on one chart).
+    const padding = R + 2;
+    points.forEach(p => {
+      p.x = Math.max(padding, Math.min(width - padding, p.x));
+      p.y = Math.max(padding, Math.min(height - padding, p.y));
+    });
 
     const hasHighlight = data.some(d => d.highlight);
 
