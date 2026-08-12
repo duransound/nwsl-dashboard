@@ -1,0 +1,6 @@
+# Local-only; not needed in the GitHub Pages repo
+.venv/
+__pycache__/
+*.pyc
+history/
+weekly_update.log
