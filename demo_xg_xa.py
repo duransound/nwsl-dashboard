@@ -4,7 +4,7 @@ season data (pulled from the ASA API on 2026-08-11): top 20 players by
 combined xG+xA among those with 500+ minutes played.
 """
 
-from build_xg_xa_chart import build_html
+from build_xg_xa_chart import build_html, per96
 
 rows = [
     {"player": "Croix Bethune", "team": "WAS", "minutes": 1691, "xg": 5.903, "xa": 5.648, "goals": 3},
@@ -28,6 +28,9 @@ rows = [
     {"player": "Lia Eugenia Godfrey", "team": "SD", "minutes": 1180, "xg": 4.056, "xa": 2.343, "goals": 5},
     {"player": "Maddie Mercado", "team": "SEA", "minutes": 1489, "xg": 5.129, "xa": 1.122, "goals": 5},
 ]
+for r in rows:
+    r["xg96"] = round(per96(r["xg"], r["minutes"]), 4)
+    r["xa96"] = round(per96(r["xa"], r["minutes"]), 4)
 
 html = build_html(rows, season="2026", minimum_minutes=500, live=False)
 with open("xg_xa_chart_demo.html", "w") as f:

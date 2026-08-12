@@ -178,7 +178,7 @@ function drawDivergingBar(container, cfg) {{
       x: barX, y: y, width: Math.max(barW, 1), height: rowH - 8, rx: 3,
     }});
     rect.addEventListener("mouseenter", (event) => showTooltip(
-      `<div class="name">${{d.label}}</div><div class="row">${{cfg.valueLabel}}: ${{d.value.toFixed(2)}}</div>`, event));
+      `<div class="name">${{d.label}}</div><div class="row">${{cfg.valueLabel}}: ${{d.value.toFixed(2)}}</div>${{d.extra ? `<div class="row">${{d.extra}}</div>` : ""}}`, event));
     rect.addEventListener("mousemove", moveTooltip);
     rect.addEventListener("mouseleave", hideTooltip);
     g.appendChild(rect);
@@ -303,12 +303,35 @@ function drawScatter(container, cfg) {{
     node.appendChild(label);
 
     if (d.highlight && d.annotation) {{
+      // Prefer placing the annotation beside the bubble (right, or left if
+      // there's no room to the right before the chart edge) -- but in a
+      // dense cluster, that text can run straight through a neighboring
+      // bubble. Check for that along the annotation's actual horizontal
+      // band and fall back to stacking the text above the bubble instead,
+      // which is reliably clear of horizontal neighbors.
       const estTextWidth = d.annotation.length * 6.4;
       const anchorRight = (p.x + R + 8 + estTextWidth) < width;
-      const anno = el("text", {{
-        class: "annotation", x: anchorRight ? R + 8 : -(R + 8), y: 4,
-        "text-anchor": anchorRight ? "start" : "end",
-      }});
+      const sideX = anchorRight ? p.x + R + 8 : p.x - R - 8;
+      const sideEndX = anchorRight ? sideX + estTextWidth : sideX - estTextWidth;
+      const bandLo = Math.min(sideX, sideEndX) - R, bandHi = Math.max(sideX, sideEndX) + R;
+      const collides = points.some(other => other.d !== d
+        && Math.abs(other.y - p.y) < R * 2
+        && other.x > bandLo && other.x < bandHi);
+
+      let annoX = anchorRight ? R + 8 : -(R + 8);
+      let annoY = 4;
+      let annoAnchor = anchorRight ? "start" : "end";
+      if (collides) {{
+        // Stack above the bubble instead -- but centering on the bubble can
+        // run the text off the left/right edge of the chart when the bubble
+        // itself sits near an edge, so clamp to the visible plot area.
+        annoY = -(R + 10);
+        const halfW = estTextWidth / 2;
+        if (p.x - halfW < 4) {{ annoAnchor = "start"; annoX = 4 - p.x; }}
+        else if (p.x + halfW > width - 4) {{ annoAnchor = "end"; annoX = (width - 4) - p.x; }}
+        else {{ annoAnchor = "middle"; annoX = 0; }}
+      }}
+      const anno = el("text", {{class: "annotation", x: annoX, y: annoY, "text-anchor": annoAnchor}});
       anno.textContent = d.annotation;
       node.appendChild(anno);
     }}

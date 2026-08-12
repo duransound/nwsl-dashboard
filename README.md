@@ -135,13 +135,51 @@ a dropdown-driven roster-comparison renderer, the tab/panel shell) so
 adding another chart later is a matter of fetching the data and appending
 one more config dict — not writing a new chart from scratch.
 
-Tabs are ordered **League Picture → Team xG Diff. → Shot Quality →
-Playmaking Style → Goals vs. xG → xG vs. xA → Goals Added → Goalkeepers →
-Compare Teammates**: open on the whole league's shape, narrow to team-level,
-then player-level creation/finishing findings, the capstone metric, the
-goalkeeper picture, and finally the open-ended explorer tab — Duarte's
-"what is, then what's the point" structure, with the one interactive/
-exploratory tab placed last since it isn't leading with a single finding.
+Tabs are ordered **League Picture → Team xG Diff. → Team Goals Added →
+Shot Quality → Playmaking Style → Goals vs. xG → xG vs. xA → Goals Added →
+Goalkeepers → Compare Teammates**: open on the whole league's shape, narrow
+to team-level, then player-level creation/finishing findings, the capstone
+metric, the goalkeeper picture, and finally the open-ended explorer tab —
+Duarte's "what is, then what's the point" structure, with the one
+interactive/exploratory tab placed last since it isn't leading with a
+single finding.
+
+### Round 10 additions (2026-08-12)
+
+- **Team Goals Added** (new tab) — Goals Added (g+) summed across every
+  action type at the team level, net of what the team conceded to
+  opponents: a single on-ball-quality number, separate from the shot-based
+  xG picture the League Picture/Team xG Diff. tabs already cover. Built via
+  `chart_builders.build_team_goals_added_chart()`. The live path
+  (`build_dashboard.py`) gets every team in one call to
+  `/teams/goals-added` (no `team_id` filter needed); the demo snapshot
+  pulled each team individually to stay safe against the bulk-JSON-summary
+  reliability issue described below.
+- **Playmaking Style is now per-96**, closing a gap flagged in the previous
+  round: 4 of 15 players (Racheal Kundananji, Gia Corley, Pietra Tordin,
+  Ludmila) were missing individually-verified minutes in the demo snapshot;
+  they were fetched this round via
+  `/players/xgoals?player_id=X&season_name=2026` (and each one's returned
+  `team_id` matched what was already on file — a good cross-check). The
+  Goalkeepers tab's per-96 gap in the demo snapshot was deliberately **not**
+  closed the same way this round — bulk-pulling `minutes_played` for all 20
+  goalkeepers hit the same large-JSON-summary reliability problem described
+  in `demo_dashboard.py`'s comments (the shots-value bug further down in
+  this README is the same underlying issue, previously on a different
+  field). The reliable fix is still running `build_dashboard.py` locally
+  against the live API and using its output as the new demo snapshot.
+- The three round-1 static matplotlib charts (`nwsl_xg_charts.py`) and the
+  standalone `build_xg_xa_chart.py` bubble chart were restyled to match the
+  Design Guidelines doc for the first time — insight-led titles computed
+  from the data, one highlighted story point per chart, everything else
+  muted to gray, and a best-effort Karla/Space Grotesk typeface match
+  (falls back to your system's default sans-serif / matplotlib's DejaVu
+  Sans if those fonts aren't installed locally — same idea as the HTML
+  dashboard's font fallback, just for a static image instead of a browser).
+  A couple of real label-overlap bugs were caught and fixed in this pass
+  (a bar annotation colliding with its own axis label, and ~20 player names
+  piling up unreadably on a dense scatter) — see the code comments in
+  `nwsl_xg_charts.py` for the specifics if you're extending it further.
 
 ### New charts this round
 
@@ -360,15 +398,31 @@ here's the honest gap between what you have now and that:
    is a single-page app: HTML/CSS/JS, no build step, no framework. That part
    doesn't need to be rebuilt, just extended (more chart types, filters,
    routing between views if it grows beyond tabs).
-2. **The missing piece is live data in the browser itself.** Right now the
-   Python script fetches data and bakes it into the HTML at *build* time. A
-   real webapp would fetch from the ASA API at *page-load* time instead, via
-   `fetch()` in the browser — which means checking whether ASA's API sends
-   CORS headers that allow browser-side requests from an arbitrary origin
-   (this wasn't testable from this sandbox; check by opening browser dev
-   tools' Network tab against a `fetch()` call once you're set up locally).
-   If it doesn't allow that, you'd add a thin backend (a few lines of Flask/
-   Express) that proxies the ASA API and adds the CORS headers yourself.
+2. **The missing piece is live data in the browser itself, and CORS is the
+   real blocker here (round 10 update).** Right now the Python script
+   fetches data and bakes it into the HTML at *build* time. A real webapp
+   would fetch from the ASA API at *page-load* time instead, via `fetch()`
+   in the browser. This round couldn't test that directly — the cloud
+   sandbox's own network is blocked from the ASA API entirely, and its
+   Chrome-extension bridge to a real browser wasn't connected this session
+   — but a web search turned up a filed, closed GitHub issue on ASA's own
+   JS wrapper repo asking for exactly this: [itscalledsoccer-js issue #2,
+   "CORS policy prevents requests from static websites"](https://github.com/American-Soccer-Analysis/itscalledsoccer-js/issues/2).
+   The issue is closed but there's no visible maintainer comment confirming
+   a fix, so treat this as "probably still blocked, unconfirmed" rather
+   than a hard no. **To find out for certain**, open any page in your
+   browser, open dev tools' Console, and run:
+   ```js
+   fetch("https://app.americansocceranalysis.com/api/v1/nwsl/teams")
+     .then(r => r.json()).then(console.log).catch(console.error)
+   ```
+   A CORS block shows up as a red network error mentioning
+   "Access-Control-Allow-Origin" — if you see that, the API can't be called
+   directly from browser JS on a different origin, and you'd add a thin
+   backend (a few lines of Flask/Express, or a small Cloudflare
+   Worker/Vercel serverless function) that proxies the ASA API and adds the
+   CORS header yourself. If the `fetch()` succeeds instead, you're clear to
+   call the API directly from the browser with no backend at all.
 3. **Hosting**: already done — see "Hosting on GitHub Pages" above. The
    same GitHub Pages setup keeps working if this ever grows into a real
    webapp with a thin backend; you'd just add the backend somewhere with
@@ -389,10 +443,26 @@ here's the honest gap between what you have now and that:
 - **R-native NWSL datasets:** the `nwslR` package —
   https://github.com/adror1/nwslR — useful for historical play-by-play and
   roster data that isn't in the ASA API.
-- Natural next charts: xG race chart (cumulative xG over a match/season,
-  line chart), shot maps (needs shot-location data, a separate ASA endpoint),
-  team-level Goals Added (this kit only did player-level), multi-season
-  trends for a team or player you're tracking.
+- **Team-level Goals Added is done** (round 10, see above) — this kit
+  previously only had player-level.
+- **Shot maps and an xG-race (cumulative xG during a match) chart are not
+  possible with this API, confirmed round 10** — not "need a different
+  endpoint," genuinely absent. Checked ASA's own wrapper method lists
+  (`itscalledsoccer`, Python and R) and there's no shot-location/coordinate
+  method and no play-by-play/event method anywhere in the package. The
+  closest thing available is `/games` (final scores, dates, opponents) and
+  `/games/xgoals` (final match xG totals per team, e.g. home/away xgoals,
+  xpoints) — enough for a "results vs. underlying xG" match-by-match view,
+  but not a shot-by-shot map or a minute-by-minute race line.
+- **Multi-season trends are feasible and unexplored** — confirmed round 10
+  that `/games` (and by extension the xgoals/goals-added endpoints) cover
+  **2021 through the current 2026 season**, six seasons of NWSL data, for
+  a team or player you're tracking over time.
+- A **match-level "results vs. xG" view** using `/games` + `/games/xgoals`
+  together (e.g. which results most over/underperformed the underlying
+  numbers) is a scoped, ready-to-build next chart based on the round-10 API
+  investigation above — not built yet, but the endpoints and fields needed
+  are confirmed.
 
 ## Note on the sandbox that built this
 

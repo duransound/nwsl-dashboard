@@ -41,9 +41,29 @@ call the same functions. This script's only job now is to hand that shared
 code a plain list of verified player rows; it doesn't know or care how the
 charts are built. If a future round changes how a story point is picked or
 what a tooltip shows, that's a chart_builders.py edit, not a two-file edit.
+
+Round 10 (2026-08-12): two of the "Natural next steps" items from the
+project doc. (1) Added a new Team Goals Added tab -- g+ summed across every
+action type, net of what each team conceded to opponents, giving a single
+on-ball-quality number independent of the shot-based xG charts. Built via
+the new chart_builders.build_team_goals_added_chart(), shared with
+build_dashboard.py. (2) Closed the Playmaking Style per-96 gap: the 4
+players missing verified minutes (Racheal Kundananji, Gia Corley, Pietra
+Tordin, Ludmila) were individually fetched via
+/players/xgoals?player_id=X&season_name=2026 -- each one's returned team_id
+matched what was already on file, a good cross-check. Playmaking Style now
+shows Dribbling/Passing g+ per 96 minutes like every other rate stat on the
+dashboard. The Goalkeepers tab's per-96 gap was deliberately NOT closed
+this round -- see the project doc for why (the same bulk-WebFetch
+shots/minutes reliability problem round 9 hit, this time for
+minutes_played; the reliable fix is still running build_dashboard.py
+locally against the live API).
 """
 
-from chart_builders import build_finishing_creation_shotquality, build_team_charts, build_team_compare_chart
+from chart_builders import (
+    build_finishing_creation_shotquality, build_team_charts, build_team_compare_chart,
+    build_team_goals_added_chart, per96,
+)
 from dashboard_template import render_dashboard
 
 TEAM_NAMES = {
@@ -70,6 +90,28 @@ chart_quadrant, chart_diff = build_team_charts([
     for t, xgf, xga in team_xgfa_rows
 ])
 chart_diff["footnote"] = "Season in progress — teams have played 17-20 games each."
+
+# ---- Chart: Team Goals Added, 2026 (NEW, round 10) ----
+# Team-level g+, summed across all action types, individually pulled per team
+# via /teams/goals-added?team_id=X&season_name=2026 (16 calls) rather than the
+# single all-teams call the live path uses -- WebFetch's bulk-JSON summarizer
+# has already caused two data bugs on large multi-row pulls (see the project
+# doc's shots-field lesson), so each team was fetched and verified on its own
+# even though that costs more calls. (abbr, ga_for, ga_against) -- for/against
+# are each team's g+ summed across every action type (dribbling, fouling,
+# interrupting, passing, receiving, shooting, claiming).
+team_ga_rows = [
+    ("DEN", 25.8281, 30.5714), ("BAY", 21.7584, 32.1047), ("HOU", 25.2075, 32.7208),
+    ("KC", 36.4362, 26.8743), ("SD", 29.9713, 23.4638), ("SEA", 27.0433, 24.9945),
+    ("CHI", 18.1595, 41.0631), ("POR", 30.7790, 30.4915), ("ORL", 30.3278, 29.3110),
+    ("WAS", 31.6645, 24.5442), ("UTA", 32.4633, 28.0861), ("LOU", 30.1467, 34.8190),
+    ("LA", 27.2064, 25.0139), ("BOS", 29.3801, 23.9166), ("NJY", 31.7918, 26.6908),
+    ("NC", 34.0533, 27.5520),
+]
+chart_team_ga = build_team_goals_added_chart([
+    {"abbr": t, "name": TEAM_NAMES[t], "ga_for": ga_for, "ga_against": ga_against}
+    for t, ga_for, ga_against in team_ga_rows
+])
 
 # ---- Player pool shared by the finishing / creation / shot-quality charts ----
 # (name, team, minutes, xg, xa, goals, shots) -- team_id individually re-verified
@@ -113,41 +155,51 @@ player_pool = [
 chart_finishing, chart_creation, chart_shot_quality = build_finishing_creation_shotquality(
     player_pool, top_n=20, minimum_minutes=500)
 
-# ---- Chart: playmaking style -- Dribbling g+ vs Passing g+ (NEW) ----
+# ---- Chart: playmaking style -- Dribbling g+ vs Passing g+ (round 10: now
+# per-96) ----
 # Goals Added breaks into 6 action types; this isolates the two "creation
 # style" categories to show HOW a player creates value, not just how much.
-# Goals Added is already position-relative and not a raw counting stat tied
-# to minutes the way xG/xA are, so it's left as-is (not converted to per-96).
-# (name, team, dribbling_g+, passing_g+) -- from /players/goals-added, verified.
+# Round 9 left this as a raw season total because 4 of the 15 players'
+# minutes weren't yet individually verified (Racheal Kundananji, Gia Corley,
+# Pietra Tordin, Ludmila). Round 10 fetched those 4 individually via
+# /players/xgoals?player_id=X&season_name=2026 (each cross-checked against
+# its team_id, which matched the team already on file for that player) --
+# closing the gap flagged in the project doc's "Natural next steps". The
+# other 11 players' minutes were already verified elsewhere in this file
+# (player_rows / extra_roster_rows).
+# (name, team, minutes, dribbling_g+, passing_g+) -- g+ from /players/goals-added, verified.
 playmaking_rows = [
-    ("Sophia Wilson", "POR", 0.612, 1.184),
-    ("Barbra Banda", "ORL", 1.847, 0.203),
-    ("Trinity Rodman", "WAS", 1.412, 0.586),
-    ("Olivia Moultrie", "POR", 0.334, 0.721),
-    ("Racheal Kundananji", "BAY", 0.881, 0.198),
-    ("Dudinha", "SD", 0.276, 0.512),
-    ("Emma Sears", "LOU", 0.203, 1.048),
-    ("Evelyn Ijeh", "NC", 0.492, 0.187),
-    ("Gia Corley", "SD", 0.618, 0.241),
-    ("Maddie Mercado", "SEA", 0.157, 0.489),
-    ("Debinha", "KC", 0.244, 0.556),
-    ("Aissata Traore", "BOS", 0.389, 0.298),
-    ("Lia Eugenia Godfrey", "SD", 0.221, 0.334),
-    ("Pietra Tordin", "POR", 0.098, 0.402),
-    ("Ludmila", "SD", 0.312, 0.129),
+    ("Sophia Wilson", "POR", 1636, 0.612, 1.184),
+    ("Barbra Banda", "ORL", 1241, 1.847, 0.203),
+    ("Trinity Rodman", "WAS", 1774, 1.412, 0.586),
+    ("Olivia Moultrie", "POR", 1460, 0.334, 0.721),
+    ("Racheal Kundananji", "BAY", 853, 0.881, 0.198),
+    ("Dudinha", "SD", 1247, 0.276, 0.512),
+    ("Emma Sears", "LOU", 1453, 0.203, 1.048),
+    ("Evelyn Ijeh", "NC", 1242, 0.492, 0.187),
+    ("Gia Corley", "SD", 1071, 0.618, 0.241),
+    ("Maddie Mercado", "SEA", 1489, 0.157, 0.489),
+    ("Debinha", "KC", 930, 0.244, 0.556),
+    ("Aissata Traore", "BOS", 1410, 0.389, 0.298),
+    ("Lia Eugenia Godfrey", "SD", 1180, 0.221, 0.334),
+    ("Pietra Tordin", "POR", 1574, 0.098, 0.402),
+    ("Ludmila", "SD", 1389, 0.312, 0.129),
 ]
+_playmaking_leader = max(
+    playmaking_rows, key=lambda r: per96(r[4], r[2]) - per96(r[3], r[2])
+)
 chart_playmaking = {
     "type": "scatter", "tabLabel": "Playmaking Style",
-    "metricLabel": "Goals Added: Dribbling vs. Passing",
-    "title": "Emma Sears creates almost entirely through passing, not dribbling",
-    "blurb": "The 15 Goals Added leaders, split into two of the metric's six action categories — value created by beating defenders on the dribble (right) vs. value created by passing (up).",
-    "xAxisLabel": "Dribbling g+", "yAxisLabel": "Passing g+", "radius": 15,
+    "metricLabel": "Goals Added: Dribbling vs. Passing, per 96 minutes",
+    "title": f"{_playmaking_leader[0]} creates almost entirely through passing, not dribbling",
+    "blurb": "The 15 Goals Added leaders, split into two of the metric's six action categories — value created by beating defenders on the dribble (right) vs. value created by passing (up), shown per 96 minutes so players with different minutes played are compared fairly.",
+    "xAxisLabel": "Dribbling g+ per 96 min", "yAxisLabel": "Passing g+ per 96 min", "radius": 15,
     "data": [
-        {"x": drib, "y": passing, "badge": team,
-         "tooltip": f'<div class="name">{name}</div><div class="row">{team}</div><div class="row">Dribbling {drib:+.2f} g+ &middot; Passing {passing:+.2f} g+</div>',
-         "highlight": name == "Emma Sears",
-         "annotation": f"Sears: {passing:+.2f} g+ passing vs. {drib:+.2f} g+ dribbling" if name == "Emma Sears" else None}
-        for name, team, drib, passing in playmaking_rows
+        {"x": round(per96(drib, minutes), 4), "y": round(per96(passing, minutes), 4), "badge": team,
+         "tooltip": f'<div class="name">{name}</div><div class="row">{team} &middot; {minutes} min</div><div class="row">Dribbling {drib:+.2f} g+ ({per96(drib, minutes):+.3f}/96) &middot; Passing {passing:+.2f} g+ ({per96(passing, minutes):+.3f}/96)</div>',
+         "highlight": name == _playmaking_leader[0],
+         "annotation": f"{name.split()[-1]}: {per96(passing, minutes):+.3f} g+/96 passing vs. {per96(drib, minutes):+.3f} g+/96 dribbling" if name == _playmaking_leader[0] else None}
+        for name, team, minutes, drib, passing in playmaking_rows
     ],
 }
 
@@ -205,6 +257,7 @@ chart_goalkeepers = {
     "metricLabel": "Shots Faced vs. Goals Saved Above Expected",
     "title": f"{gk_leader[0]} is saving more than any other keeper in the league, despite a light workload",
     "blurb": "20 goalkeepers, 500+ minutes. Shots faced (right, workload) vs. goals prevented relative to the quality of shots faced (up, axis is xG on target minus goals actually conceded — positive means outperforming expectation).",
+    "footnote": "Shots faced shown as a season total, not per-96 — this demo snapshot doesn't have individually-verified minutes for each goalkeeper. build_dashboard.py's live version shows shots faced per 96 minutes.",
     "xAxisLabel": "Shots faced", "yAxisLabel": "Goals saved above expected", "radius": 15,
     "data": [
         {"x": shots, "y": gsae, "badge": team,
@@ -247,13 +300,13 @@ roster_pool = [
 ]
 chart_team_compare = build_team_compare_chart(roster_pool, TEAM_NAMES, ga_by_name)
 chart_team_compare["blurb"] = "Pick a team to see how its players stack up on a given metric. All 16 teams, 2+ players each."
-chart_team_compare["footnote"] = "xGoals/xAssists shown per 96 minutes. Goals Added shown as 0.00 for players outside this demo's top-15 GA leaderboard, not a true zero."
+chart_team_compare["footnote"] = "xGoals, xAssists, Goals, and Shots shown per 96 minutes. Goals Added shown as 0.00 for players outside this demo's top-15 GA leaderboard, not a true zero."
 
 html = render_dashboard(
     title="NWSL 2026 Analytics Dashboard",
     subtitle="Team and player xG stats from the American Soccer Analysis API — each tab leads with the finding, not just the metric. Demo build; see footnotes for exact scope.",
     charts=[
-        chart_quadrant, chart_diff, chart_shot_quality, chart_playmaking,
+        chart_quadrant, chart_diff, chart_team_ga, chart_shot_quality, chart_playmaking,
         chart_finishing, chart_creation, chart_goals_added, chart_goalkeepers,
         chart_team_compare,
     ],

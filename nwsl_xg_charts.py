@@ -26,6 +26,22 @@ pip install requests pandas matplotlib
 USAGE
 -----
 python nwsl_xg_charts.py --season 2025 --minutes 900
+
+Round 10 (2026-08-12): restyled to the project's Design Guidelines doc,
+matching the interactive dashboard's approach -- these three charts had
+been the only ones left in their original round-1 style. Changes: (1)
+titles now state the finding, not the metric name, computed dynamically
+from whatever data comes back; (2) exactly one story point per chart is
+highlighted in the palette's blue/red, everything else recedes to muted
+gray (previously every bar/point was colored, which is the "belt and
+suspenders" pattern the guidelines call out); (3) attempts to set
+Karla/Space Grotesk (matching the dashboard's typography), falling back to
+matplotlib's default sans-serif if those fonts aren't installed locally --
+this sandbox can't download font files (same network allowlist issue as
+the ASA API itself), so charts built here will show the fallback; running
+this on a machine with the fonts installed (e.g. after `pip install` of a
+font-bundling package, or just having them in the OS font directory) will
+pick them up automatically, no code change needed.
 """
 
 import argparse
@@ -34,6 +50,7 @@ import sys
 import matplotlib.pyplot as plt
 import pandas as pd
 import requests
+from matplotlib import font_manager as fm
 
 BASE_URL = "https://app.americansocceranalysis.com/api/v1/nwsl"
 
@@ -41,10 +58,38 @@ BASE_URL = "https://app.americansocceranalysis.com/api/v1/nwsl"
 COLOR_BLUE = "#2a78d6"      # positive / series 1
 COLOR_RED = "#e34948"       # negative / series 8
 COLOR_MUTED = "#898781"     # axis / muted labels
+COLOR_MUTED_FILL = "#c3c2b7"  # muted / de-emphasized marks (bars, points)
 COLOR_GRID = "#e1e0d9"      # hairline gridlines
 COLOR_BASELINE = "#c3c2b7"  # zero line / axis line
 COLOR_INK = "#0b0b0b"       # primary text
 COLOR_SURFACE = "#fcfcfb"   # chart background
+
+# Best-effort Karla/Space Grotesk, matching the dashboard's typography system.
+# Resolved ONCE here (rather than left as a family list handed to every text
+# call) so a machine without these fonts installed falls back to DejaVu Sans
+# cleanly instead of matplotlib re-attempting and re-warning ("findfont: Font
+# family 'Karla' not found") on every single label. This sandbox can't
+# download font files (same network allowlist issue as the ASA API itself);
+# running this on a machine with the fonts actually installed (e.g. via a
+# font-bundling pip package, or just present in the OS font directory) will
+# pick them up automatically, no code change needed.
+_installed = {f.name for f in fm.fontManager.ttflist}
+FONT_BODY = "Karla" if "Karla" in _installed else "DejaVu Sans"
+FONT_HEAD = "Space Grotesk" if "Space Grotesk" in _installed else "DejaVu Sans"
+plt.rcParams["font.family"] = FONT_BODY
+
+
+def _style_axes(ax):
+    ax.set_facecolor(COLOR_SURFACE)
+    ax.tick_params(colors=COLOR_MUTED)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.set_axisbelow(True)
+
+
+def _title(ax, text):
+    ax.set_title(text, color=COLOR_INK, fontsize=13, loc="left", fontweight="bold",
+                 fontfamily=FONT_HEAD, wrap=True)
 
 
 def fetch(endpoint: str, **params) -> pd.DataFrame:
@@ -68,50 +113,90 @@ def get_player_xgoals(season: str, minimum_minutes: int) -> pd.DataFrame:
 
 
 def chart_team_xg_differential(team_df: pd.DataFrame, season: str, outfile: str):
-    df = team_df.sort_values("xgoal_difference")
-    colors = [COLOR_RED if v < 0 else COLOR_BLUE for v in df["xgoal_difference"]]
+    df = team_df.sort_values("xgoal_difference").reset_index(drop=True)
+    extreme = df.loc[df["xgoal_difference"].abs().idxmax()]
+    if extreme["xgoal_difference"] < 0:
+        title = (f"{extreme['team_name']} is being outchanced by "
+                  f"{abs(extreme['xgoal_difference']):.0f} expected goals — the widest gap in the league")
+    else:
+        title = (f"{extreme['team_name']} has the league's biggest xG edge, "
+                  f"+{extreme['xgoal_difference']:.0f} ahead of the chances it's allowed")
 
-    fig, ax = plt.subplots(figsize=(8, 6), facecolor=COLOR_SURFACE)
-    ax.set_facecolor(COLOR_SURFACE)
+    def bar_color(row):
+        if row["team_abbreviation"] != extreme["team_abbreviation"]:
+            return COLOR_MUTED_FILL
+        return COLOR_RED if row["xgoal_difference"] < 0 else COLOR_BLUE
+
+    colors = [bar_color(row) for _, row in df.iterrows()]
+
+    fig, ax = plt.subplots(figsize=(8, 6.4), facecolor=COLOR_SURFACE)
+    _style_axes(ax)
     ax.barh(df["team_abbreviation"], df["xgoal_difference"], color=colors, height=0.62)
     ax.axvline(0, color=COLOR_BASELINE, linewidth=1)
-    ax.set_xlabel("xG differential (xGF - xGA)", color=COLOR_MUTED)
-    ax.set_title(f"NWSL {season}: Team xG Differential", color=COLOR_INK, fontsize=13, loc="left")
-    ax.tick_params(colors=COLOR_MUTED)
-    for spine in ax.spines.values():
-        spine.set_visible(False)
+    ax.set_xlabel("xG differential (xGF - xGA)", color=COLOR_MUTED, fontfamily=FONT_BODY)
+    _title(ax, title)
     ax.grid(axis="x", color=COLOR_GRID, linewidth=0.8)
-    ax.set_axisbelow(True)
     for label in ax.get_yticklabels():
         label.set_color(COLOR_INK)
+        if label.get_text() == extreme["team_abbreviation"]:
+            label.set_fontweight("bold")
+
+    # Label the highlighted bar INSIDE it (white text near the tip), not
+    # outside -- the highlighted bar is always the longest one (it's picked
+    # by largest absolute value), so there's always room, and it can never
+    # collide with the y-axis team-abbreviation labels the way an outside
+    # label can when the bar's tip lands right next to the axis edge (a real
+    # overlap caught in this round's headless QA pass on the CHI bar, which
+    # sits at -26.6, very close to the left edge of the plot).
+    span = df["xgoal_difference"].abs().max()
+    inward = span * 0.025
+    if extreme["xgoal_difference"] < 0:
+        x, ha = extreme["xgoal_difference"] + inward, "left"
+    else:
+        x, ha = extreme["xgoal_difference"] - inward, "right"
+    ax.text(x, extreme["team_abbreviation"], f"{extreme['xgoal_difference']:+.1f} xG",
+            ha=ha, va="center", fontsize=10, fontweight="bold", color="white", fontfamily=FONT_BODY)
+
     fig.tight_layout()
     fig.savefig(outfile, dpi=200)
     plt.close(fig)
 
 
 def chart_team_xgf_vs_xga(team_df: pd.DataFrame, season: str, outfile: str):
-    fig, ax = plt.subplots(figsize=(7, 7), facecolor=COLOR_SURFACE)
-    ax.set_facecolor(COLOR_SURFACE)
-    ax.scatter(team_df["xgoals_for"], team_df["xgoals_against"], s=70,
-               color=COLOR_BLUE, edgecolor=COLOR_SURFACE, linewidth=1, zorder=3)
+    df = team_df.copy()
+    med_x, med_y = df["xgoals_for"].median(), df["xgoals_against"].median()
+    # story point: best combined rank on attack (high xGF) and defense (low xGA),
+    # same "best on both sides of the ball" logic as the interactive dashboard.
+    rank_xgf = df["xgoals_for"].rank(ascending=False)
+    rank_xga = df["xgoals_against"].rank(ascending=True)
+    combined = rank_xgf + rank_xga
+    best_idx = combined.idxmin()
+    best = df.loc[best_idx]
+    title = f"{best['team_name']} is the strongest team on both sides of the ball"
 
-    med_x, med_y = team_df["xgoals_for"].median(), team_df["xgoals_against"].median()
+    colors = [COLOR_BLUE if i == best_idx else COLOR_MUTED_FILL for i in df.index]
+
+    fig, ax = plt.subplots(figsize=(7, 7), facecolor=COLOR_SURFACE)
+    _style_axes(ax)
+    ax.scatter(df["xgoals_for"], df["xgoals_against"], s=70,
+               color=colors, edgecolor=COLOR_SURFACE, linewidth=1, zorder=3)
+
     ax.axvline(med_x, color=COLOR_BASELINE, linewidth=1, linestyle="--")
     ax.axhline(med_y, color=COLOR_BASELINE, linewidth=1, linestyle="--")
 
-    for _, row in team_df.iterrows():
+    for idx, row in df.iterrows():
+        is_best = idx == best_idx
         ax.annotate(row["team_abbreviation"], (row["xgoals_for"], row["xgoals_against"]),
-                    textcoords="offset points", xytext=(5, 4), fontsize=8, color=COLOR_INK)
+                    textcoords="offset points", xytext=(5, 4),
+                    fontsize=8.5 if is_best else 8,
+                    fontweight="bold" if is_best else "normal",
+                    color=COLOR_INK if is_best else COLOR_MUTED, fontfamily=FONT_BODY)
 
     ax.invert_yaxis()  # up = fewer xG conceded = stronger defense
-    ax.set_xlabel("xG For (attacking output)", color=COLOR_MUTED)
-    ax.set_ylabel("xG Against (defensive output, inverted)", color=COLOR_MUTED)
-    ax.set_title(f"NWSL {season}: Attacking vs. Defensive xG Strength", color=COLOR_INK, fontsize=13, loc="left")
-    ax.tick_params(colors=COLOR_MUTED)
-    for spine in ax.spines.values():
-        spine.set_visible(False)
+    ax.set_xlabel("xG For (attacking output)", color=COLOR_MUTED, fontfamily=FONT_BODY)
+    ax.set_ylabel("xG Against (defensive output, inverted)", color=COLOR_MUTED, fontfamily=FONT_BODY)
+    _title(ax, title)
     ax.grid(color=COLOR_GRID, linewidth=0.8)
-    ax.set_axisbelow(True)
     fig.tight_layout()
     fig.savefig(outfile, dpi=200)
     plt.close(fig)
@@ -120,36 +205,48 @@ def chart_team_xgf_vs_xga(team_df: pd.DataFrame, season: str, outfile: str):
 def chart_player_goals_vs_xg(player_df: pd.DataFrame, season: str, outfile: str, top_n: int = 20):
     df = player_df.sort_values("xgoals", ascending=False).head(top_n).copy()
     df["diff"] = df["goals"] - df["xgoals"]
-    colors = [COLOR_RED if d > 0 else COLOR_BLUE for d in df["diff"]]
+    extreme_idx = df["diff"].abs().idxmax()
+    extreme = df.loc[extreme_idx]
+    if extreme["diff"] > 0:
+        title = f"{extreme['player_name']} is outscoring their xG by more than anyone else in this group"
+    else:
+        title = f"{extreme['player_name']} is underperforming their xG by more than anyone else in this group"
+
+    colors = []
+    for idx, row in df.iterrows():
+        if idx != extreme_idx:
+            colors.append(COLOR_MUTED_FILL)
+        else:
+            colors.append(COLOR_RED if row["diff"] > 0 else COLOR_BLUE)
 
     fig, ax = plt.subplots(figsize=(7.5, 7.5), facecolor=COLOR_SURFACE)
-    ax.set_facecolor(COLOR_SURFACE)
+    _style_axes(ax)
 
     lim = max(df["xgoals"].max(), df["goals"].max()) * 1.15
     ax.plot([0, lim], [0, lim], color=COLOR_BASELINE, linewidth=1, linestyle="--", zorder=1)
 
     ax.scatter(df["xgoals"], df["goals"], s=70, color=colors,
                edgecolor=COLOR_SURFACE, linewidth=1, zorder=3)
-    for _, row in df.iterrows():
-        ax.annotate(row["player_name"], (row["xgoals"], row["goals"]),
-                    textcoords="offset points", xytext=(5, 4), fontsize=8, color=COLOR_INK)
+    # Only the highlighted point gets a name label. With ~20 players this
+    # densely clustered (see this round's headless QA screenshot), labeling
+    # every point produces an unreadable pile of overlapping names that no
+    # static image can un-overlap the way the interactive dashboard's
+    # collision-avoidance JS does -- per the design guidelines' "declutter
+    # before you decorate," a label only earns its place if it's legible.
+    # The full player list is still in the CSV this script also writes.
+    ax.annotate(extreme["player_name"], (extreme["xgoals"], extreme["goals"]),
+                textcoords="offset points", xytext=(6, 5),
+                fontsize=9.5, fontweight="bold", color=COLOR_INK, fontfamily=FONT_BODY)
+    ax.annotate(f"{extreme['diff']:+.1f} vs. xG", (extreme["xgoals"], extreme["goals"]),
+                textcoords="offset points", xytext=(6, -14),
+                fontsize=9.5, fontweight="bold", color=COLOR_INK, fontfamily=FONT_BODY)
 
     ax.set_xlim(0, lim)
     ax.set_ylim(0, lim)
-    ax.set_xlabel("xGoals", color=COLOR_MUTED)
-    ax.set_ylabel("Goals", color=COLOR_MUTED)
-    ax.set_title(f"NWSL {season}: Goals vs. xGoals (top {top_n} by xG)", color=COLOR_INK, fontsize=13, loc="left")
-    ax.tick_params(colors=COLOR_MUTED)
-    for spine in ax.spines.values():
-        spine.set_visible(False)
+    ax.set_xlabel("xGoals", color=COLOR_MUTED, fontfamily=FONT_BODY)
+    ax.set_ylabel("Goals", color=COLOR_MUTED, fontfamily=FONT_BODY)
+    _title(ax, title)
     ax.grid(color=COLOR_GRID, linewidth=0.8)
-    ax.set_axisbelow(True)
-
-    handles = [
-        plt.Line2D([0], [0], marker="o", color="w", markerfacecolor=COLOR_RED, markersize=8, label="Overperforming xG"),
-        plt.Line2D([0], [0], marker="o", color="w", markerfacecolor=COLOR_BLUE, markersize=8, label="Underperforming xG"),
-    ]
-    ax.legend(handles=handles, frameon=False, labelcolor=COLOR_INK, loc="upper left")
     fig.tight_layout()
     fig.savefig(outfile, dpi=200)
     plt.close(fig)

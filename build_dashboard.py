@@ -1,9 +1,16 @@
 """
 Builds the full NWSL analytics dashboard (dashboard.html) from LIVE data via
-the ASA API: team xGF-vs-xGA, team xG differential, player goals-vs-xG,
-player xG-vs-xA, shot quality, playmaking style, a Goals Added leaderboard,
-goalkeepers, and a team-roster comparison tab -- all in one tabbed,
-self-contained HTML file.
+the ASA API: team xGF-vs-xGA, team xG differential, team Goals Added,
+player goals-vs-xG, player xG-vs-xA, shot quality, playmaking style, a
+player Goals Added leaderboard, goalkeepers, and a team-roster comparison
+tab -- all in one tabbed, self-contained HTML file.
+
+Round 10 (2026-08-12) additions: a new Team Goals Added tab (team-level g+
+net of value conceded -- see chart_builders.build_team_goals_added_chart,
+fetched here in one call to /teams/goals-added since that endpoint returns
+every team without needing a team_id filter), and Playmaking Style now
+shown per 96 minutes (using the minutes_played field that already rides
+along on every /players/goals-added row).
 
 Run on your own machine (unrestricted network):
     pip install requests
@@ -37,7 +44,10 @@ import sys
 
 import requests
 
-from chart_builders import build_finishing_creation_shotquality, build_team_charts, build_team_compare_chart
+from chart_builders import (
+    build_finishing_creation_shotquality, build_team_charts, build_team_compare_chart,
+    build_team_goals_added_chart, per96,
+)
 from dashboard_template import render_dashboard
 
 BASE_URL = "https://app.americansocceranalysis.com/api/v1/nwsl"
@@ -62,6 +72,27 @@ def fetch_team_charts(season, teams):
         for r in rows
     ]
     return build_team_charts(team_rows)
+
+
+def fetch_team_goals_added(season, teams):
+    """One call gets every team at once (unlike the player-level endpoint,
+    /teams/goals-added has no team_id filter requirement to return everyone),
+    so this is cheap on the live path -- no per-team looping needed."""
+    rows = requests.get(f"{BASE_URL}/teams/goals-added", params={"season_name": season}, timeout=30).json()
+    totals = {}
+    for r in rows:
+        team_id = r["team_id"][0] if isinstance(r["team_id"], list) else r["team_id"]
+        t = totals.setdefault(team_id, {"ga_for": 0.0, "ga_against": 0.0})
+        t["ga_for"] += r["goals_added_for"]
+        t["ga_against"] += r["goals_added_against"]
+    return build_team_goals_added_chart([
+        {
+            "abbr": teams.get(team_id, {}).get("team_abbreviation", team_id),
+            "name": teams.get(team_id, {}).get("team_name", team_id),
+            "ga_for": v["ga_for"], "ga_against": v["ga_against"],
+        }
+        for team_id, v in totals.items()
+    ])
 
 
 def fetch_player_pool(season, minimum_minutes, teams, players):
@@ -94,7 +125,13 @@ def build_goals_added_chart(season, minimum_minutes, top_n, teams, players):
             "label": f'{name} ({teams.get(team_id, {}).get("team_abbreviation", team_id)})',
             "value": total,
         })
-        ga_by_player[r["player_id"]] = {"total": total, "by_action": by_action}
+        # minutes_played rides along on every /players/goals-added row, so the
+        # live path can convert Playmaking Style to per-96 with no extra
+        # fetch -- unlike the demo snapshot, which had to backfill 4 players'
+        # minutes individually (see chart_builders.py / project doc).
+        ga_by_player[r["player_id"]] = {
+            "total": total, "by_action": by_action, "minutes": r.get("minutes_played", 0),
+        }
     scored.sort(key=lambda d: d["value"], reverse=True)
     top_rows = scored[:top_n]
     leader = top_rows[0]
@@ -113,26 +150,31 @@ def build_goals_added_chart(season, minimum_minutes, top_n, teams, players):
     # top_n leaders. Story point = the biggest passing-over-dribbling skew. ---
     playmaking_pool = []
     for d in top_rows:
-        ga = ga_by_player.get(d["player_id"], {}).get("by_action", {})
+        entry = ga_by_player.get(d["player_id"], {})
+        ga = entry.get("by_action", {})
         drib = ga.get("Dribbling", 0.0)
         passing = ga.get("Passing", 0.0)
-        playmaking_pool.append({"player_id": d["player_id"], "name": d["name"], "drib": drib, "passing": passing,
-                                 "team": d["label"].split("(")[-1].rstrip(")")})
-    most_pass_skewed = max(playmaking_pool, key=lambda d: d["passing"] - d["drib"])
+        minutes = entry.get("minutes", 0)
+        playmaking_pool.append({
+            "player_id": d["player_id"], "name": d["name"], "drib": drib, "passing": passing,
+            "minutes": minutes, "drib96": per96(drib, minutes), "passing96": per96(passing, minutes),
+            "team": d["label"].split("(")[-1].rstrip(")"),
+        })
+    most_pass_skewed = max(playmaking_pool, key=lambda d: d["passing96"] - d["drib96"])
 
     chart_playmaking = {
         "type": "scatter", "tabLabel": "Playmaking Style",
-        "metricLabel": "Goals Added: Dribbling vs. Passing",
+        "metricLabel": "Goals Added: Dribbling vs. Passing, per 96 minutes",
         "title": f"{most_pass_skewed['name']} creates almost entirely through passing, not dribbling"
-                 if most_pass_skewed["passing"] >= most_pass_skewed["drib"]
+                 if most_pass_skewed["passing96"] >= most_pass_skewed["drib96"]
                  else f"{most_pass_skewed['name']} creates far more through dribbling than passing",
-        "blurb": f"The top {top_n} Goals Added leaders, split into two of the metric's six action categories — value created by beating defenders on the dribble (right) vs. value created by passing (up).",
-        "xAxisLabel": "Dribbling g+", "yAxisLabel": "Passing g+", "radius": 15,
+        "blurb": f"The top {top_n} Goals Added leaders, split into two of the metric's six action categories — value created by beating defenders on the dribble (right) vs. value created by passing (up), shown per 96 minutes so players with different minutes played are compared fairly.",
+        "xAxisLabel": "Dribbling g+ per 96 min", "yAxisLabel": "Passing g+ per 96 min", "radius": 15,
         "data": [
-            {"x": d["drib"], "y": d["passing"], "badge": d["team"],
-             "tooltip": f'<div class="name">{d["name"]}</div><div class="row">{d["team"]}</div><div class="row">Dribbling {d["drib"]:+.2f} g+ &middot; Passing {d["passing"]:+.2f} g+</div>',
+            {"x": round(d["drib96"], 4), "y": round(d["passing96"], 4), "badge": d["team"],
+             "tooltip": f'<div class="name">{d["name"]}</div><div class="row">{d["team"]} &middot; {d["minutes"]} min</div><div class="row">Dribbling {d["drib"]:+.2f} g+ ({d["drib96"]:+.3f}/96) &middot; Passing {d["passing"]:+.2f} g+ ({d["passing96"]:+.3f}/96)</div>',
              "highlight": d["player_id"] == most_pass_skewed["player_id"],
-             "annotation": f"{d['name'].split()[-1]}: {d['passing']:+.2f} g+ passing vs. {d['drib']:+.2f} g+ dribbling" if d["player_id"] == most_pass_skewed["player_id"] else None}
+             "annotation": f"{d['name'].split()[-1]}: {d['passing96']:+.3f} g+/96 passing vs. {d['drib96']:+.3f} g+/96 dribbling" if d["player_id"] == most_pass_skewed["player_id"] else None}
             for d in playmaking_pool
         ],
     }
@@ -149,6 +191,8 @@ def build_goalkeeper_chart(season, minimum_minutes, teams, players):
         team_id = r["team_id"][0] if isinstance(r["team_id"], list) else r["team_id"]
         r["abbr"] = teams.get(team_id, {}).get("team_abbreviation", team_id)
         r["gsae"] = r["xgoals_gk_faced"] - r["goals_conceded"]
+        r["minutes"] = r.get("minutes_played", 0)
+        r["shots96"] = per96(r["shots_faced"], r["minutes"])
 
     if not rows:
         return None
@@ -156,15 +200,15 @@ def build_goalkeeper_chart(season, minimum_minutes, teams, players):
 
     return {
         "type": "scatter", "tabLabel": "Goalkeepers",
-        "metricLabel": "Shots Faced vs. Goals Saved Above Expected",
+        "metricLabel": "Shots Faced vs. Goals Saved Above Expected, per 96 minutes",
         "title": f"{leader['gk_name']} is saving more than any other keeper in the league",
-        "blurb": f"Goalkeepers with {minimum_minutes}+ minutes. Shots faced (right, workload) vs. goals prevented relative to the quality of shots faced (up, axis is xG on target minus goals actually conceded — positive means outperforming expectation).",
-        "xAxisLabel": "Shots faced", "yAxisLabel": "Goals saved above expected", "radius": 15,
+        "blurb": f"Goalkeepers with {minimum_minutes}+ minutes. Shots faced per 96 minutes (right, workload) vs. goals prevented relative to the quality of shots faced (up, axis is xG on target minus goals actually conceded — positive means outperforming expectation).",
+        "xAxisLabel": "Shots faced per 96 min", "yAxisLabel": "Goals saved above expected", "radius": 15,
         "data": [
-            {"x": r["shots_faced"], "y": round(r["gsae"], 3), "badge": r["abbr"],
-             "tooltip": f'<div class="name">{r["gk_name"]}</div><div class="row">{r["abbr"]} &middot; {r["shots_faced"]} shots faced</div><div class="row">Goals saved above expected: {r["gsae"]:+.2f}</div>',
+            {"x": round(r["shots96"], 4), "y": round(r["gsae"], 3), "badge": r["abbr"],
+             "tooltip": f'<div class="name">{r["gk_name"]}</div><div class="row">{r["abbr"]} &middot; {r["shots_faced"]} shots faced ({r["shots96"]:.1f}/96)</div><div class="row">Goals saved above expected: {r["gsae"]:+.2f}</div>',
              "highlight": r["player_id"] == leader["player_id"],
-             "annotation": f"{leader['gk_name']}: {leader['gsae']:+.1f} on {leader['shots_faced']} shots faced" if r["player_id"] == leader["player_id"] else None}
+             "annotation": f"{leader['gk_name']}: {leader['gsae']:+.1f} on {leader['shots96']:.1f} shots/96" if r["player_id"] == leader["player_id"] else None}
             for r in rows
         ],
     }
@@ -204,6 +248,9 @@ def main():
     print(f"Fetching NWSL {args.season} team xG data...")
     chart_quadrant, chart_diff = fetch_team_charts(args.season, teams)
 
+    print(f"Fetching NWSL {args.season} team Goals Added data...")
+    chart_team_ga = fetch_team_goals_added(args.season, teams)
+
     print(f"Fetching NWSL {args.season} player xG/xA data (min {args.minutes} minutes)...")
     player_pool = fetch_player_pool(args.season, args.minutes, teams, players)
     chart_finishing, chart_creation, chart_shot_quality = build_finishing_creation_shotquality(
@@ -219,7 +266,7 @@ def main():
     print("Fetching full team rosters for Compare Teammates...")
     chart_team_compare = fetch_team_compare_chart(args.season, args.minutes, teams, players, ga_lookup)
 
-    charts = [chart_quadrant, chart_diff]
+    charts = [chart_quadrant, chart_diff, chart_team_ga]
     if chart_shot_quality:
         charts.append(chart_shot_quality)
     charts.append(chart_playmaking)

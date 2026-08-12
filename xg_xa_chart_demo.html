@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>NWSL 2026: xGoals vs. xAssists</title>
+<title>NWSL 2026: Croix Bethune is the most balanced dual threat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Karla:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
 <style>
   .viz-root {
     color-scheme: light;
@@ -14,22 +17,28 @@
     --baseline: #c3c2b7;
     --series-1: #2a78d6;
     --series-1-ink: #ffffff;
+    --font-body: 'Karla', system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-head: 'Space Grotesk', system-ui, -apple-system, "Segoe UI", sans-serif;
   }
-  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f9f9f7; }
+  body { margin: 0; font-family: var(--font-body); background: #f9f9f7; }
   .viz-root { background: var(--surface-1); max-width: 900px; margin: 24px auto; padding: 24px 28px 28px; border-radius: 12px; }
-  h1 { font-size: 17px; font-weight: 600; color: var(--text-primary); margin: 0 0 2px; }
-  .subtitle { font-size: 12.5px; color: var(--text-secondary); margin: 0 0 18px; }
+  h1 { font-family: var(--font-head); font-weight: 500; font-size: 18px; color: var(--text-primary); margin: 0 0 6px; line-height: 1.35; }
+  .subtitle { font-size: 12.5px; color: var(--text-secondary); margin: 0 0 18px; max-width: 640px; }
   .axis path, .axis line { stroke: var(--baseline); }
   .axis text { fill: var(--text-muted); font-size: 11px; }
   .gridline { stroke: var(--grid); stroke-width: 1px; }
   .axis-label { fill: var(--text-secondary); font-size: 12px; }
   .bubble { fill: var(--series-1); stroke: var(--surface-1); stroke-width: 2px; cursor: pointer; }
+  .bubble.muted { fill: var(--baseline); }
   .bubble:hover, .bubble.hover { fill: #1c5cab; }
   .badge-text { fill: var(--series-1-ink); font-size: 9.5px; font-weight: 600; text-anchor: middle; pointer-events: none; }
+  .badge-text.muted { fill: var(--text-secondary); }
+  .annotation { fill: var(--text-primary); font-size: 11.5px; font-weight: 600; font-family: var(--font-body); }
   .tooltip {
     position: absolute; pointer-events: none; background: var(--text-primary); color: #fff;
     padding: 8px 10px; border-radius: 6px; font-size: 12px; line-height: 1.5; opacity: 0;
     transition: opacity 0.1s ease; box-shadow: 0 4px 14px rgba(0,0,0,0.18); max-width: 220px;
+    font-family: var(--font-body);
   }
   .tooltip .name { font-weight: 600; margin-bottom: 2px; }
   .tooltip .row { color: #d8d8d4; }
@@ -38,19 +47,44 @@
 </head>
 <body>
 <div class="viz-root">
-  <h1>NWSL 2026: xGoals vs. xAssists</h1>
-  <p class="subtitle">Players with 500+ minutes &middot; 20 qualifying players &middot; hover a bubble for details</p>
+  <h1>NWSL 2026: Croix Bethune is the most balanced dual threat</h1>
+  <p class="subtitle">Players with 500+ minutes, shown per 96 minutes so players with different minutes played are compared fairly &middot; 20 qualifying players &middot; hover a bubble for details</p>
   <div id="chart"></div>
   <p class="footnote">Demo dataset: top 20 players by combined xG+xA among those with 500+ minutes (2026 season in progress, snapshot). Run with --live for the complete qualifying pool.</p>
   <div class="tooltip" id="tooltip"></div>
 </div>
 <script>
-const data = [{"player": "Croix Bethune", "team": "WAS", "minutes": 1691, "xg": 5.903, "xa": 5.648, "goals": 3}, {"player": "Sophia Wilson", "team": "POR", "minutes": 1636, "xg": 8.163, "xa": 3.2, "goals": 9}, {"player": "Trinity Rodman", "team": "WAS", "minutes": 1774, "xg": 8.221, "xa": 2.542, "goals": 9}, {"player": "Barbra Banda", "team": "ORL", "minutes": 1241, "xg": 8.409, "xa": 2.306, "goals": 12}, {"player": "Aissata Traore", "team": "BOS", "minutes": 1410, "xg": 7.9, "xa": 1.529, "goals": 5}, {"player": "Evelyn Ijeh", "team": "NC", "minutes": 1242, "xg": 8.157, "xa": 1.205, "goals": 9}, {"player": "Cloe Lacasse", "team": "UTA", "minutes": 1769, "xg": 4.855, "xa": 4.14, "goals": 6}, {"player": "Jordynn Dudley", "team": "NJY", "minutes": 1439, "xg": 5.366, "xa": 3.429, "goals": 3}, {"player": "Mina Tanaka", "team": "UTA", "minutes": 1415, "xg": 5.221, "xa": 2.478, "goals": 5}, {"player": "Olivia Moultrie", "team": "POR", "minutes": 1460, "xg": 5.073, "xa": 2.452, "goals": 5}, {"player": "Leicy Santos", "team": "WAS", "minutes": 1664, "xg": 3.173, "xa": 3.845, "goals": 5}, {"player": "Riley Jackson", "team": "NC", "minutes": 1767, "xg": 3.146, "xa": 3.703, "goals": 2}, {"player": "Katherine Rader", "team": "HOU", "minutes": 1714, "xg": 4.849, "xa": 1.949, "goals": 7}, {"player": "Debinha", "team": "KC", "minutes": 930, "xg": 4.101, "xa": 2.686, "goals": 4}, {"player": "Amanda Santos", "team": "BOS", "minutes": 1066, "xg": 5.578, "xa": 1.185, "goals": 5}, {"player": "Dudinha", "team": "SD", "minutes": 1247, "xg": 3.964, "xa": 2.791, "goals": 5}, {"player": "Sveind\u00eds Jane J\u00f3nsd\u00f3ttir", "team": "LA", "minutes": 1187, "xg": 4.667, "xa": 2.083, "goals": 6}, {"player": "Jaedyn Shaw", "team": "NJY", "minutes": 1628, "xg": 4.164, "xa": 2.343, "goals": 5}, {"player": "Lia Eugenia Godfrey", "team": "SD", "minutes": 1180, "xg": 4.056, "xa": 2.343, "goals": 5}, {"player": "Maddie Mercado", "team": "SEA", "minutes": 1489, "xg": 5.129, "xa": 1.122, "goals": 5}];
+const data = [{"player": "Croix Bethune", "team": "WAS", "minutes": 1691, "xg": 5.903, "xa": 5.648, "goals": 3, "xg96": 0.3351, "xa96": 0.3206}, {"player": "Sophia Wilson", "team": "POR", "minutes": 1636, "xg": 8.163, "xa": 3.2, "goals": 9, "xg96": 0.479, "xa96": 0.1878}, {"player": "Trinity Rodman", "team": "WAS", "minutes": 1774, "xg": 8.221, "xa": 2.542, "goals": 9, "xg96": 0.4449, "xa96": 0.1376}, {"player": "Barbra Banda", "team": "ORL", "minutes": 1241, "xg": 8.409, "xa": 2.306, "goals": 12, "xg96": 0.6505, "xa96": 0.1784}, {"player": "Aissata Traore", "team": "BOS", "minutes": 1410, "xg": 7.9, "xa": 1.529, "goals": 5, "xg96": 0.5379, "xa96": 0.1041}, {"player": "Evelyn Ijeh", "team": "NC", "minutes": 1242, "xg": 8.157, "xa": 1.205, "goals": 9, "xg96": 0.6305, "xa96": 0.0931}, {"player": "Cloe Lacasse", "team": "UTA", "minutes": 1769, "xg": 4.855, "xa": 4.14, "goals": 6, "xg96": 0.2635, "xa96": 0.2247}, {"player": "Jordynn Dudley", "team": "NJY", "minutes": 1439, "xg": 5.366, "xa": 3.429, "goals": 3, "xg96": 0.358, "xa96": 0.2288}, {"player": "Mina Tanaka", "team": "UTA", "minutes": 1415, "xg": 5.221, "xa": 2.478, "goals": 5, "xg96": 0.3542, "xa96": 0.1681}, {"player": "Olivia Moultrie", "team": "POR", "minutes": 1460, "xg": 5.073, "xa": 2.452, "goals": 5, "xg96": 0.3336, "xa96": 0.1612}, {"player": "Leicy Santos", "team": "WAS", "minutes": 1664, "xg": 3.173, "xa": 3.845, "goals": 5, "xg96": 0.1831, "xa96": 0.2218}, {"player": "Riley Jackson", "team": "NC", "minutes": 1767, "xg": 3.146, "xa": 3.703, "goals": 2, "xg96": 0.1709, "xa96": 0.2012}, {"player": "Katherine Rader", "team": "HOU", "minutes": 1714, "xg": 4.849, "xa": 1.949, "goals": 7, "xg96": 0.2716, "xa96": 0.1092}, {"player": "Debinha", "team": "KC", "minutes": 930, "xg": 4.101, "xa": 2.686, "goals": 4, "xg96": 0.4233, "xa96": 0.2773}, {"player": "Amanda Santos", "team": "BOS", "minutes": 1066, "xg": 5.578, "xa": 1.185, "goals": 5, "xg96": 0.5023, "xa96": 0.1067}, {"player": "Dudinha", "team": "SD", "minutes": 1247, "xg": 3.964, "xa": 2.791, "goals": 5, "xg96": 0.3052, "xa96": 0.2149}, {"player": "Sveind\u00eds Jane J\u00f3nsd\u00f3ttir", "team": "LA", "minutes": 1187, "xg": 4.667, "xa": 2.083, "goals": 6, "xg96": 0.3774, "xa96": 0.1685}, {"player": "Jaedyn Shaw", "team": "NJY", "minutes": 1628, "xg": 4.164, "xa": 2.343, "goals": 5, "xg96": 0.2455, "xa96": 0.1382}, {"player": "Lia Eugenia Godfrey", "team": "SD", "minutes": 1180, "xg": 4.056, "xa": 2.343, "goals": 5, "xg96": 0.33, "xa96": 0.1906}, {"player": "Maddie Mercado", "team": "SEA", "minutes": 1489, "xg": 5.129, "xa": 1.122, "goals": 5, "xg96": 0.3307, "xa96": 0.0723}];
+const highlightName = "Croix Bethune";
 
 const margin = {top: 16, right: 24, bottom: 46, left: 54};
 const width = 820 - margin.left - margin.right;
 const height = 560 - margin.top - margin.bottom;
 const R = 16;
+
+function resolveCollisions(points, r, padding) {
+  const minDist = r * 2 + padding;
+  for (let iter = 0; iter < 300; iter++) {
+    let moved = false;
+    for (let i = 0; i < points.length; i++) {
+      for (let j = i + 1; j < points.length; j++) {
+        const a = points[i], b = points[j];
+        let dx = b.x - a.x, dy = b.y - a.y;
+        let dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 0.01) { dx = (Math.random() - 0.5); dy = (Math.random() - 0.5); dist = 0.01; }
+        if (dist < minDist) {
+          const push = (minDist - dist) / 2;
+          const ux = dx / dist, uy = dy / dist;
+          a.x -= ux * push; a.y -= uy * push;
+          b.x += ux * push; b.y += uy * push;
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+  return points;
+}
 
 const svgNS = "http://www.w3.org/2000/svg";
 function el(tag, attrs) {
@@ -65,8 +99,8 @@ function niceMax(v) {
   return Math.ceil((v * 1.15) / step) * step;
 }
 
-const xMax = niceMax(Math.max(...data.map(d => d.xg)));
-const yMax = niceMax(Math.max(...data.map(d => d.xa)));
+const xMax = niceMax(Math.max(...data.map(d => d.xg96)));
+const yMax = niceMax(Math.max(...data.map(d => d.xa96)));
 
 function xScale(v) { return (v / xMax) * width; }
 function yScale(v) { return height - (v / yMax) * height; }
@@ -118,22 +152,38 @@ yAxis.appendChild(el("line", {x1: 0, x2: 0, y1: 0, y2: height}));
 g.appendChild(yAxis);
 
 const xLabel = el("text", {class: "axis-label", x: width / 2, y: height + 38, "text-anchor": "middle"});
-xLabel.textContent = "xGoals";
+xLabel.textContent = "xGoals per 96 min";
 g.appendChild(xLabel);
 
 const yLabel = el("text", {class: "axis-label", transform: `rotate(-90)`, x: -height / 2, y: -40, "text-anchor": "middle"});
-yLabel.textContent = "xAssists";
+yLabel.textContent = "xAssists per 96 min";
 g.appendChild(yLabel);
 
 const tooltip = document.getElementById("tooltip");
 
-data.forEach(d => {
-  const node = el("g", {class: "player-node", transform: `translate(${xScale(d.xg)},${yScale(d.xa)})`});
-  const circle = el("circle", {class: "bubble", r: R});
-  const label = el("text", {class: "badge-text", dy: "0.32em", "text-anchor": "middle"});
+// true data positions, then nudge apart only enough to stop bubble overlap
+// (same approach as the main dashboard's scatter charts -- this standalone
+// chart predates that addition, so dense clusters could previously overlap)
+const points = data.map(d => ({x: xScale(d.xg96), y: yScale(d.xa96), d}));
+resolveCollisions(points, R, 3);
+
+points.forEach(p => {
+  const d = p.d;
+  const isHighlight = d.player === highlightName;
+  const isMuted = highlightName && !isHighlight;
+  const node = el("g", {class: "player-node", transform: `translate(${p.x},${p.y})`});
+  const circle = el("circle", {class: "bubble" + (isMuted ? " muted" : ""), r: R});
+  const label = el("text", {class: "badge-text" + (isMuted ? " muted" : ""), dy: "0.32em", "text-anchor": "middle"});
   label.textContent = d.team;
   node.appendChild(circle);
   node.appendChild(label);
+
+  if (isHighlight) {
+    const anno = el("text", {class: "annotation", x: R + 8, y: 4, "text-anchor": "start"});
+    anno.textContent = `${d.player.split(" ").slice(-1)[0]}: ${d.xg96.toFixed(2)} xG/96, ${d.xa96.toFixed(2)} xA/96`;
+    node.appendChild(anno);
+  }
+
   g.appendChild(node);
 
   node.addEventListener("mouseenter", () => {
@@ -141,7 +191,7 @@ data.forEach(d => {
     tooltip.innerHTML =
       `<div class="name">${d.player}</div>` +
       `<div class="row">${d.team} &middot; ${d.minutes} min</div>` +
-      `<div class="row">xG ${d.xg.toFixed(2)} &middot; xA ${d.xa.toFixed(2)} &middot; Goals ${d.goals}</div>`;
+      `<div class="row">xG/96 ${d.xg96.toFixed(2)} &middot; xA/96 ${d.xa96.toFixed(2)} &middot; Goals ${d.goals}</div>`;
     tooltip.style.opacity = 1;
   });
   node.addEventListener("mousemove", (event) => {

@@ -25,6 +25,18 @@ team (a transparent PNG works best), and the chart will use
 that has an entry. Good sources: each team's official press/media kit page,
 or Wikipedia's team infobox crest (save the image locally rather than
 hot-linking it).
+
+Round 10 (2026-08-12): restyled to the project's Design Guidelines doc --
+this was the other chart flagged as "not yet redone" alongside the round-1
+matplotlib charts. Now: Karla/Space Grotesk typography matching the main
+dashboard (same Google Fonts link + system-sans fallback stack), xG/xA
+shown per 96 minutes instead of season totals (matching the per-96
+convention established everywhere else in this project), a single
+highlighted story point (the most balanced dual threat, same "min(xg96,
+xa96)" logic as chart_builders.py's Compare Teammates chart) with everything
+else muted to gray, and the same pairwise bubble-collision avoidance the
+main dashboard's scatter charts use (this standalone script predates that
+addition, so bubbles could previously overlap at a dense cluster).
 """
 
 import argparse
@@ -57,15 +69,22 @@ def fetch_live(season: str, minimum_minutes: int):
 
     rows = []
     for row in xg:
+        minutes = row["minutes"]
         rows.append({
             "player": name_by_id.get(row["player_id"], row["player_id"]),
             "team": TEAM_ABBR.get(row["team_id"], row["team_id"]),
-            "minutes": row["minutes"],
+            "minutes": minutes,
             "xg": round(row["xgoals"], 3),
             "xa": round(row["xassists"], 3),
+            "xg96": round(per96(row["xgoals"], minutes), 4),
+            "xa96": round(per96(row["xassists"], minutes), 4),
             "goals": row["goals"],
         })
     return rows
+
+
+def per96(value, minutes):
+    return (value / minutes * 96) if minutes else 0.0
 
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -73,6 +92,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <title>{title}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Karla:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
 <style>
   .viz-root {{
     color-scheme: light;
@@ -84,22 +106,28 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     --baseline: #c3c2b7;
     --series-1: #2a78d6;
     --series-1-ink: #ffffff;
+    --font-body: 'Karla', system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-head: 'Space Grotesk', system-ui, -apple-system, "Segoe UI", sans-serif;
   }}
-  body {{ margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f9f9f7; }}
+  body {{ margin: 0; font-family: var(--font-body); background: #f9f9f7; }}
   .viz-root {{ background: var(--surface-1); max-width: 900px; margin: 24px auto; padding: 24px 28px 28px; border-radius: 12px; }}
-  h1 {{ font-size: 17px; font-weight: 600; color: var(--text-primary); margin: 0 0 2px; }}
-  .subtitle {{ font-size: 12.5px; color: var(--text-secondary); margin: 0 0 18px; }}
+  h1 {{ font-family: var(--font-head); font-weight: 500; font-size: 18px; color: var(--text-primary); margin: 0 0 6px; line-height: 1.35; }}
+  .subtitle {{ font-size: 12.5px; color: var(--text-secondary); margin: 0 0 18px; max-width: 640px; }}
   .axis path, .axis line {{ stroke: var(--baseline); }}
   .axis text {{ fill: var(--text-muted); font-size: 11px; }}
   .gridline {{ stroke: var(--grid); stroke-width: 1px; }}
   .axis-label {{ fill: var(--text-secondary); font-size: 12px; }}
   .bubble {{ fill: var(--series-1); stroke: var(--surface-1); stroke-width: 2px; cursor: pointer; }}
+  .bubble.muted {{ fill: var(--baseline); }}
   .bubble:hover, .bubble.hover {{ fill: #1c5cab; }}
   .badge-text {{ fill: var(--series-1-ink); font-size: 9.5px; font-weight: 600; text-anchor: middle; pointer-events: none; }}
+  .badge-text.muted {{ fill: var(--text-secondary); }}
+  .annotation {{ fill: var(--text-primary); font-size: 11.5px; font-weight: 600; font-family: var(--font-body); }}
   .tooltip {{
     position: absolute; pointer-events: none; background: var(--text-primary); color: #fff;
     padding: 8px 10px; border-radius: 6px; font-size: 12px; line-height: 1.5; opacity: 0;
     transition: opacity 0.1s ease; box-shadow: 0 4px 14px rgba(0,0,0,0.18); max-width: 220px;
+    font-family: var(--font-body);
   }}
   .tooltip .name {{ font-weight: 600; margin-bottom: 2px; }}
   .tooltip .row {{ color: #d8d8d4; }}
@@ -116,11 +144,36 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </div>
 <script>
 const data = {data_json};
+const highlightName = {highlight_json};
 
 const margin = {{top: 16, right: 24, bottom: 46, left: 54}};
 const width = 820 - margin.left - margin.right;
 const height = 560 - margin.top - margin.bottom;
 const R = 16;
+
+function resolveCollisions(points, r, padding) {{
+  const minDist = r * 2 + padding;
+  for (let iter = 0; iter < 300; iter++) {{
+    let moved = false;
+    for (let i = 0; i < points.length; i++) {{
+      for (let j = i + 1; j < points.length; j++) {{
+        const a = points[i], b = points[j];
+        let dx = b.x - a.x, dy = b.y - a.y;
+        let dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 0.01) {{ dx = (Math.random() - 0.5); dy = (Math.random() - 0.5); dist = 0.01; }}
+        if (dist < minDist) {{
+          const push = (minDist - dist) / 2;
+          const ux = dx / dist, uy = dy / dist;
+          a.x -= ux * push; a.y -= uy * push;
+          b.x += ux * push; b.y += uy * push;
+          moved = true;
+        }}
+      }}
+    }}
+    if (!moved) break;
+  }}
+  return points;
+}}
 
 const svgNS = "http://www.w3.org/2000/svg";
 function el(tag, attrs) {{
@@ -135,8 +188,8 @@ function niceMax(v) {{
   return Math.ceil((v * 1.15) / step) * step;
 }}
 
-const xMax = niceMax(Math.max(...data.map(d => d.xg)));
-const yMax = niceMax(Math.max(...data.map(d => d.xa)));
+const xMax = niceMax(Math.max(...data.map(d => d.xg96)));
+const yMax = niceMax(Math.max(...data.map(d => d.xa96)));
 
 function xScale(v) {{ return (v / xMax) * width; }}
 function yScale(v) {{ return height - (v / yMax) * height; }}
@@ -188,22 +241,38 @@ yAxis.appendChild(el("line", {{x1: 0, x2: 0, y1: 0, y2: height}}));
 g.appendChild(yAxis);
 
 const xLabel = el("text", {{class: "axis-label", x: width / 2, y: height + 38, "text-anchor": "middle"}});
-xLabel.textContent = "xGoals";
+xLabel.textContent = "xGoals per 96 min";
 g.appendChild(xLabel);
 
 const yLabel = el("text", {{class: "axis-label", transform: `rotate(-90)`, x: -height / 2, y: -40, "text-anchor": "middle"}});
-yLabel.textContent = "xAssists";
+yLabel.textContent = "xAssists per 96 min";
 g.appendChild(yLabel);
 
 const tooltip = document.getElementById("tooltip");
 
-data.forEach(d => {{
-  const node = el("g", {{class: "player-node", transform: `translate(${{xScale(d.xg)}},${{yScale(d.xa)}})`}});
-  const circle = el("circle", {{class: "bubble", r: R}});
-  const label = el("text", {{class: "badge-text", dy: "0.32em", "text-anchor": "middle"}});
+// true data positions, then nudge apart only enough to stop bubble overlap
+// (same approach as the main dashboard's scatter charts -- this standalone
+// chart predates that addition, so dense clusters could previously overlap)
+const points = data.map(d => ({{x: xScale(d.xg96), y: yScale(d.xa96), d}}));
+resolveCollisions(points, R, 3);
+
+points.forEach(p => {{
+  const d = p.d;
+  const isHighlight = d.player === highlightName;
+  const isMuted = highlightName && !isHighlight;
+  const node = el("g", {{class: "player-node", transform: `translate(${{p.x}},${{p.y}})`}});
+  const circle = el("circle", {{class: "bubble" + (isMuted ? " muted" : ""), r: R}});
+  const label = el("text", {{class: "badge-text" + (isMuted ? " muted" : ""), dy: "0.32em", "text-anchor": "middle"}});
   label.textContent = d.team;
   node.appendChild(circle);
   node.appendChild(label);
+
+  if (isHighlight) {{
+    const anno = el("text", {{class: "annotation", x: R + 8, y: 4, "text-anchor": "start"}});
+    anno.textContent = `${{d.player.split(" ").slice(-1)[0]}}: ${{d.xg96.toFixed(2)}} xG/96, ${{d.xa96.toFixed(2)}} xA/96`;
+    node.appendChild(anno);
+  }}
+
   g.appendChild(node);
 
   node.addEventListener("mouseenter", () => {{
@@ -211,7 +280,7 @@ data.forEach(d => {{
     tooltip.innerHTML =
       `<div class="name">${{d.player}}</div>` +
       `<div class="row">${{d.team}} &middot; ${{d.minutes}} min</div>` +
-      `<div class="row">xG ${{d.xg.toFixed(2)}} &middot; xA ${{d.xa.toFixed(2)}} &middot; Goals ${{d.goals}}</div>`;
+      `<div class="row">xG/96 ${{d.xg96.toFixed(2)}} &middot; xA/96 ${{d.xa96.toFixed(2)}} &middot; Goals ${{d.goals}}</div>`;
     tooltip.style.opacity = 1;
   }});
   node.addEventListener("mousemove", (event) => {{
@@ -230,9 +299,16 @@ data.forEach(d => {{
 
 
 def build_html(rows, season, minimum_minutes, live: bool):
-    title = f"NWSL {season}: xGoals vs. xAssists"
     n = len(rows)
-    subtitle = f"Players with {minimum_minutes}+ minutes &middot; {n} qualifying players &middot; hover a bubble for details"
+    # Story point: the most balanced dual threat -- same "highest of the
+    # lower of the two rates" logic chart_builders.py uses for the main
+    # dashboard's xG-vs-xA tab, so the two charts pick highlights the same
+    # way even though this one isn't built from chart_builders.py.
+    most_balanced = max(rows, key=lambda r: min(r["xg96"], r["xa96"])) if rows else None
+    title = (f"NWSL {season}: {most_balanced['player']} is the most balanced dual threat"
+              if most_balanced else f"NWSL {season}: xGoals vs. xAssists")
+    subtitle = (f"Players with {minimum_minutes}+ minutes, shown per 96 minutes so players with different "
+                f"minutes played are compared fairly &middot; {n} qualifying players &middot; hover a bubble for details")
     if live:
         footnote = "Round badges show team abbreviation. Fill in TEAM_LOGOS in build_xg_xa_chart.py to use real logo images instead."
     else:
@@ -241,6 +317,7 @@ def build_html(rows, season, minimum_minutes, live: bool):
     html = HTML_TEMPLATE.format(
         title=title, subtitle=subtitle, footnote=footnote,
         data_json=json.dumps(rows),
+        highlight_json=json.dumps(most_balanced["player"] if most_balanced else None),
     )
     return html
 

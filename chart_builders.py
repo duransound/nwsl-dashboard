@@ -119,23 +119,59 @@ def build_finishing_creation_shotquality(player_rows, top_n=20, minimum_minutes=
     with_shots = [r for r in top if r.get("shots", 0) >= 10]
     chart_shot_quality = None
     if with_shots:
+        for r in with_shots:
+            r["shots96"] = per96(r["shots"], r["minutes"])
         best_quality = max(with_shots, key=lambda r: r["xg"] / r["shots"])
         chart_shot_quality = {
             "type": "scatter", "tabLabel": "Shot Quality",
-            "metricLabel": "Shots Taken vs. xG per Shot",
+            "metricLabel": "Shots Taken vs. xG per Shot, per 96 minutes",
             "title": f"{best_quality['name']} gets more out of every shot than any other top creator",
-            "blurb": "Same player pool (min. 10 shots) — shot volume (right) vs. average shot quality, xG per shot (up). Low-and-right = high volume, low quality; up-and-left = fewer, better shots.",
-            "xAxisLabel": "Shots", "yAxisLabel": "xG per shot", "radius": 15,
+            "blurb": "Same player pool (min. 10 shots) — shot volume per 96 minutes (right) vs. average shot quality, xG per shot (up), so players with different minutes played are compared fairly. Low-and-right = high volume, low quality; up-and-left = fewer, better shots.",
+            "xAxisLabel": "Shots per 96 min", "yAxisLabel": "xG per shot", "radius": 15,
             "data": [
-                {"x": r["shots"], "y": round(r["xg"] / r["shots"], 4), "badge": r["team"],
-                 "tooltip": f'<div class="name">{r["name"]}</div><div class="row">{r["team"]} &middot; {r["shots"]} shots</div><div class="row">xG {r["xg"]:.2f} &middot; xG/shot {r["xg"]/r["shots"]:.3f}</div>',
+                {"x": round(r["shots96"], 4), "y": round(r["xg"] / r["shots"], 4), "badge": r["team"],
+                 "tooltip": f'<div class="name">{r["name"]}</div><div class="row">{r["team"]} &middot; {r["shots"]} shots ({r["shots96"]:.1f}/96)</div><div class="row">xG {r["xg"]:.2f} &middot; xG/shot {r["xg"]/r["shots"]:.3f}</div>',
                  "highlight": r["id"] == best_quality["id"],
-                 "annotation": f"{best_quality['name'].split()[-1]}: {best_quality['xg']/best_quality['shots']:.2f} xG/shot on {best_quality['shots']} shots" if r["id"] == best_quality["id"] else None}
+                 "annotation": f"{best_quality['name'].split()[-1]}: {best_quality['xg']/best_quality['shots']:.2f} xG/shot on {best_quality['shots96']:.1f} shots/96" if r["id"] == best_quality["id"] else None}
                 for r in with_shots
             ],
         }
 
     return chart_finishing, chart_creation, chart_shot_quality
+
+
+def build_team_goals_added_chart(team_rows):
+    """team_rows: list of {"abbr": str, "name": str, "ga_for": float, "ga_against": float}.
+    ga_for/ga_against are each team's Goals Added (g+) summed across every
+    action type (dribbling, fouling, interrupting, passing, receiving,
+    shooting, and claiming for keepers): ga_for is value the team's own
+    players created, ga_against is value opposing players created against
+    them. Net (for - against) is a single on-ball-quality number, separate
+    from the shot-based xG picture in the League Picture / Team xG Diff.
+    charts. Returns a diverging-bar chart, same shape as build_team_charts()'s
+    chart_diff."""
+    rows = [{**r, "net": r["ga_for"] - r["ga_against"]} for r in team_rows]
+    extreme = max(rows, key=lambda r: abs(r["net"]))
+    if extreme["net"] < 0:
+        title = (f"{extreme['name']}'s on-ball play is the league's single biggest goals-added "
+                  f"liability, {abs(extreme['net']):.1f} g+ worse than a league-average team")
+    else:
+        title = (f"{extreme['name']} generates more on-ball value than any other team, "
+                  f"+{extreme['net']:.1f} g+ above a league-average team")
+
+    return {
+        "type": "diverging-bar", "tabLabel": "Team Goals Added",
+        "metricLabel": "Team Goals Added (g+), net of value conceded",
+        "title": title,
+        "blurb": "Goals Added (g+) summed across every action type — value the team's own players created, minus value opposing players created against them. A single on-ball-quality number, independent of the shot-based xG charts.",
+        "valueLabel": "Net Goals Added", "xAxisLabel": "Net Goals Added (g+)",
+        "footnote": "Positive = the team created more on-ball value than it conceded, relative to a league-average team; negative = the reverse. Season totals, not per-96 — like Team xG Diff., a team doesn't have a \"minutes played\" denominator the way a player does.",
+        "data": [
+            {"label": r["abbr"], "value": round(r["net"], 2), "highlight": r["abbr"] == extreme["abbr"],
+             "extra": f"Created {r['ga_for']:.1f} g+ &middot; Conceded {r['ga_against']:.1f} g+"}
+            for r in rows
+        ],
+    }
 
 
 def build_team_compare_chart(roster_rows, team_names, ga_lookup=None, cap=18):
@@ -153,7 +189,8 @@ def build_team_compare_chart(roster_rows, team_names, ga_lookup=None, cap=18):
             "name": r["name"], "minutes": r["minutes"],
             "xg96": round(per96(r["xg"], r["minutes"]), 4),
             "xa96": round(per96(r["xa"], r["minutes"]), 4),
-            "goals": r["goals"], "shots": r.get("shots", 0),
+            "goals96": round(per96(r["goals"], r["minutes"]), 4),
+            "shots96": round(per96(r.get("shots", 0), r["minutes"]), 4),
             "ga": round(ga, 3),
         })
     for abbr in rosters:
@@ -164,15 +201,15 @@ def build_team_compare_chart(roster_rows, team_names, ga_lookup=None, cap=18):
         "metricLabel": "Team Roster Comparison",
         "title": "Compare any two teammates head-to-head",
         "blurb": "Pick a team to see how its players stack up on a given metric.",
-        "footnote": "xGoals/xAssists shown per 96 minutes.",
+        "footnote": "xGoals, xAssists, Goals, and Shots shown per 96 minutes.",
         "teamNames": team_names,
         "rosters": rosters,
         "stats": [
             {"key": "ga", "label": "Goals Added (g+)"},
             {"key": "xg96", "label": "xGoals per 96"},
             {"key": "xa96", "label": "xAssists per 96"},
-            {"key": "goals", "label": "Goals"},
-            {"key": "shots", "label": "Shots"},
+            {"key": "goals96", "label": "Goals per 96"},
+            {"key": "shots96", "label": "Shots per 96"},
             {"key": "minutes", "label": "Minutes"},
         ],
     }
