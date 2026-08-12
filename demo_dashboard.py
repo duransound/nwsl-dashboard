@@ -19,6 +19,14 @@ dropdown-driven Compare Teammates tab), and fixed a data bug caught during
 this round's verification pass -- Croix Bethune had been mis-recorded on
 Washington Spirit; she plays for Kansas City Current.
 
+Round 11 (2026-08-12): headings (dashboard title + every panel's chart
+title) switched from Space Grotesk to Fraunces, matching the "Poppies in
+the Fog" masthead added the same round -- see dashboard_template.py's
+PAGE_TEMPLATE and the Design Guidelines doc's "Site branding vs. chart
+system" section. Space Grotesk was dropped entirely (no longer used
+anywhere on the page); Karla still carries everything else (axis labels,
+tooltips, kickers, footnotes, tab labels, table data).
+
 Rebuilt again 2026-08-11 (round 3): two changes requested by the user.
 (1) Player xG/xA are now shown as rates per 96 minutes (xG/96, xA/96)
 instead of season totals, so players with very different minutes played

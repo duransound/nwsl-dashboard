@@ -154,6 +154,63 @@ Duarte's "what is, then what's the point" structure, with the one
 interactive/exploratory tab placed last since it isn't leading with a
 single finding.
 
+### Round 13 (2026-08-12): full-league player pool instead of a top-N cut
+
+The user asked whether the dashboard's player-level charts were drawing
+from a limited pool and, if so, to broaden it. Turned out the answer was
+"yes, but only on the display side" — `build_dashboard.py`'s
+`fetch_player_pool()` was already pulling every player above `--minutes`
+across all 16 teams (no `team_id` filter), but
+`chart_builders.build_finishing_creation_shotquality()` then quietly
+sliced that full pool down to the top 20 by combined xG+xA before handing
+it to the chart. Playmaking Style had the same problem one level worse —
+it was built only from the Goals Added leaderboard's top 15, so a player
+with a distinctive dribbling/passing split but a lower overall g+ total
+could never appear on it at all.
+
+**What changed:**
+- `build_finishing_creation_shotquality()` no longer takes a `top_n` — it
+  plots every row it's handed. On the live path, Goals vs. xG, xG vs. xA,
+  and Shot Quality now show the full qualifying league (typically 100-250+
+  players depending on the minutes floor and time of season) instead of a
+  top-20 cut.
+- Playmaking Style is now built from every player who qualified for the
+  `/players/goals-added` pull, decoupled from the Goals Added bar chart's
+  leaderboard cutoff. The Goals Added *bar chart* itself stays capped at
+  `--top-n` (default 20) — a ranked leaderboard genuinely reads better at
+  ~20 bars than at 150+, so that cap was kept, just no longer leaking into
+  the scatter charts.
+- `--top-n` now controls only the Goals Added leaderboard length. It used
+  to also cap Finishing/Creation/Shot Quality (removed) and, due to a
+  pre-existing bug, did *not* actually reach the Goals Added chart either
+  (that call was hardcoded to `15` regardless of the flag) — fixed as part
+  of this pass.
+- New `chart_builders.scatter_display_params(n)`: past 40 points, bubbles
+  shrink and the always-on team-abbreviation badge is dropped for every
+  point except the highlighted one — otherwise a full-league scatter turns
+  into a pile of overlapping 3-letter labels. Everyone else stays
+  identifiable via the existing hover tooltip. Verified visually (not just
+  "no console errors") with a 140-player mock pool rendered through
+  Playwright — screenshots confirmed clean, readable scatter plots at that
+  density with the highlighted point still standing out.
+- The **demo snapshot** (`demo_dashboard.py` / `dashboard_demo.html` /
+  `index.html`) is deliberately unchanged in scope — it still shows its
+  original ~20-player hand-verified set, since that's all this sandbox
+  could safely verify without a live API connection. The blurb text now
+  reads "All 20 players..." instead of "Top 20 players..." (accurate
+  either way, just reflects that there's no cut happening), but the
+  player count itself doesn't change until a real `build_dashboard.py` run
+  against the live API replaces it — see "Still needs the user to do"
+  below.
+
+**Still needs the user to do:** get a successful `python build_dashboard.py`
+run against the live API (the round-3 ASA outage may or may not still be a
+factor — worth just trying it), then treat that output, not the demo
+snapshot, as what gets copied to `index.html` and pushed to GitHub Pages.
+That's the one step that actually flips the *live, public* dashboard from
+the ~20-player demo over to the full league — everything in this round is
+already wired up to do that automatically once a live run succeeds.
+
 ### Round 11 additions (2026-08-12)
 
 - **Team Goals Added** (new tab) — Goals Added (g+) summed across every

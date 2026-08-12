@@ -12,6 +12,18 @@ every team without needing a team_id filter), and Playmaking Style now
 shown per 96 minutes (using the minutes_played field that already rides
 along on every /players/goals-added row).
 
+Round 13 (2026-08-12): the player pool feeding Goals vs. xG, xG vs. xA,
+Shot Quality, and Playmaking Style is no longer artificially cut down to a
+top-N leaderboard before plotting. fetch_player_pool() already pulled every
+player above --minutes across all 16 teams (no team_id filter) -- the
+scatter charts were just throwing most of that away by slicing to the top
+20 by combined xG+xA (and Playmaking Style was further, accidentally,
+capped to the Goals Added leaderboard's top 15). Both caps are gone; --top-n
+now controls only the Goals Added bar chart, where a ranked leaderboard
+still makes sense to cap for readability. See chart_builders.py's
+scatter_display_params() for how the scatter charts stay readable at
+100-250+ points instead of 20.
+
 Run on your own machine (unrestricted network):
     pip install requests
     python build_dashboard.py --season 2026 --minutes 500 --top-n 20
@@ -46,7 +58,7 @@ import requests
 
 from chart_builders import (
     build_finishing_creation_shotquality, build_team_charts, build_team_compare_chart,
-    build_team_goals_added_chart, per96,
+    build_team_goals_added_chart, per96, scatter_display_params,
 )
 from dashboard_template import render_dashboard
 
@@ -109,7 +121,14 @@ def fetch_player_pool(season, minimum_minutes, teams, players):
     ]
 
 
-def build_goals_added_chart(season, minimum_minutes, top_n, teams, players):
+def build_goals_added_chart(season, minimum_minutes, leaderboard_n, teams, players):
+    """leaderboard_n caps only the Goals Added bar chart -- a ranked
+    leaderboard genuinely reads better at ~20 bars than at 150+. Playmaking
+    Style is a scatter, not a ranking, so it's built from the FULL fetched
+    pool (every player above minimum_minutes), not just the leaderboard_n
+    leaders -- previously it was accidentally coupled to the leaderboard
+    cutoff, which meant a player with a great passing/dribbling split but a
+    lower total g+ would never show up on that chart at all."""
     rows = requests.get(f"{BASE_URL}/players/goals-added",
                          params={"season_name": season, "minimum_minutes": minimum_minutes}, timeout=30).json()
     scored = []
@@ -119,10 +138,12 @@ def build_goals_added_chart(season, minimum_minutes, top_n, teams, players):
         total = sum(by_action.values())
         team_id = r["team_id"][0] if isinstance(r["team_id"], list) else r["team_id"]
         name = players.get(r["player_id"], r["player_id"])
+        abbr = teams.get(team_id, {}).get("team_abbreviation", team_id)
         scored.append({
             "player_id": r["player_id"],
             "name": name,
-            "label": f'{name} ({teams.get(team_id, {}).get("team_abbreviation", team_id)})',
+            "label": f'{name} ({abbr})',
+            "team": abbr,
             "value": total,
         })
         # minutes_played rides along on every /players/goals-added row, so the
@@ -133,23 +154,25 @@ def build_goals_added_chart(season, minimum_minutes, top_n, teams, players):
             "total": total, "by_action": by_action, "minutes": r.get("minutes_played", 0),
         }
     scored.sort(key=lambda d: d["value"], reverse=True)
-    top_rows = scored[:top_n]
+    top_rows = scored[:leaderboard_n]
     leader = top_rows[0]
 
     chart_goals_added = {
         "type": "diverging-bar", "tabLabel": "Goals Added",
         "metricLabel": "Goals Added (g+), all action types combined",
         "title": f"{leader['name']} leads the league in total on-ball contribution",
-        "blurb": "ASA's other headline metric — possession-value contribution (dribbling + fouling + interrupting + passing + receiving + shooting) above average for the position, summed across categories.",
+        "blurb": f"ASA's other headline metric — possession-value contribution (dribbling + fouling + interrupting + passing + receiving + shooting) above average for the position, summed across categories. Top {leaderboard_n} among {minimum_minutes}+ minute players ({len(scored)} qualify).",
         "valueLabel": "Goals Added", "xAxisLabel": "Goals Added (g+)",
         "footnote": "“Above average” is relative to other players in the same general position.",
         "data": [{"label": d["label"], "value": d["value"], "highlight": d is leader} for d in top_rows],
     }
 
-    # --- Chart: playmaking style -- Dribbling g+ vs Passing g+ for the same
-    # top_n leaders. Story point = the biggest passing-over-dribbling skew. ---
+    # --- Chart: playmaking style -- Dribbling g+ vs Passing g+ across every
+    # player who qualified for the /players/goals-added pull (not just the
+    # leaderboard_n leaders above -- see docstring). Story point = the
+    # biggest passing-over-dribbling skew league-wide. ---
     playmaking_pool = []
-    for d in top_rows:
+    for d in scored:
         entry = ga_by_player.get(d["player_id"], {})
         ga = entry.get("by_action", {})
         drib = ga.get("Dribbling", 0.0)
@@ -158,9 +181,10 @@ def build_goals_added_chart(season, minimum_minutes, top_n, teams, players):
         playmaking_pool.append({
             "player_id": d["player_id"], "name": d["name"], "drib": drib, "passing": passing,
             "minutes": minutes, "drib96": per96(drib, minutes), "passing96": per96(passing, minutes),
-            "team": d["label"].split("(")[-1].rstrip(")"),
+            "team": d["team"],
         })
     most_pass_skewed = max(playmaking_pool, key=lambda d: d["passing96"] - d["drib96"])
+    pm_radius, pm_show_badges = scatter_display_params(len(playmaking_pool))
 
     chart_playmaking = {
         "type": "scatter", "tabLabel": "Playmaking Style",
@@ -168,8 +192,9 @@ def build_goals_added_chart(season, minimum_minutes, top_n, teams, players):
         "title": f"{most_pass_skewed['name']} creates almost entirely through passing, not dribbling"
                  if most_pass_skewed["passing96"] >= most_pass_skewed["drib96"]
                  else f"{most_pass_skewed['name']} creates far more through dribbling than passing",
-        "blurb": f"The top {top_n} Goals Added leaders, split into two of the metric's six action categories — value created by beating defenders on the dribble (right) vs. value created by passing (up), shown per 96 minutes so players with different minutes played are compared fairly.",
-        "xAxisLabel": "Dribbling g+ per 96 min", "yAxisLabel": "Passing g+ per 96 min", "radius": 15,
+        "blurb": f"All {len(playmaking_pool)} players with {minimum_minutes}+ minutes played, split into two of the metric's six action categories — value created by beating defenders on the dribble (right) vs. value created by passing (up), shown per 96 minutes so players with different minutes played are compared fairly.",
+        "xAxisLabel": "Dribbling g+ per 96 min", "yAxisLabel": "Passing g+ per 96 min",
+        "radius": pm_radius, "showBadges": pm_show_badges,
         "data": [
             {"x": round(d["drib96"], 4), "y": round(d["passing96"], 4), "badge": d["team"],
              "tooltip": f'<div class="name">{d["name"]}</div><div class="row">{d["team"]} &middot; {d["minutes"]} min</div><div class="row">Dribbling {d["drib"]:+.2f} g+ ({d["drib96"]:+.3f}/96) &middot; Passing {d["passing"]:+.2f} g+ ({d["passing96"]:+.3f}/96)</div>',
@@ -197,13 +222,15 @@ def build_goalkeeper_chart(season, minimum_minutes, teams, players):
     if not rows:
         return None
     leader = max(rows, key=lambda r: r["gsae"])
+    gk_radius, gk_show_badges = scatter_display_params(len(rows))
 
     return {
         "type": "scatter", "tabLabel": "Goalkeepers",
         "metricLabel": "Shots Faced vs. Goals Saved Above Expected, per 96 minutes",
         "title": f"{leader['gk_name']} is saving more than any other keeper in the league",
-        "blurb": f"Goalkeepers with {minimum_minutes}+ minutes. Shots faced per 96 minutes (right, workload) vs. goals prevented relative to the quality of shots faced (up, axis is xG on target minus goals actually conceded — positive means outperforming expectation).",
-        "xAxisLabel": "Shots faced per 96 min", "yAxisLabel": "Goals saved above expected", "radius": 15,
+        "blurb": f"All {len(rows)} goalkeepers with {minimum_minutes}+ minutes. Shots faced per 96 minutes (right, workload) vs. goals prevented relative to the quality of shots faced (up, axis is xG on target minus goals actually conceded — positive means outperforming expectation).",
+        "xAxisLabel": "Shots faced per 96 min", "yAxisLabel": "Goals saved above expected",
+        "radius": gk_radius, "showBadges": gk_show_badges,
         "data": [
             {"x": round(r["shots96"], 4), "y": round(r["gsae"], 3), "badge": r["abbr"],
              "tooltip": f'<div class="name">{r["gk_name"]}</div><div class="row">{r["abbr"]} &middot; {r["shots_faced"]} shots faced ({r["shots96"]:.1f}/96)</div><div class="row">Goals saved above expected: {r["gsae"]:+.2f}</div>',
@@ -236,8 +263,13 @@ def fetch_team_compare_chart(season, minimum_minutes, teams, players, ga_lookup)
 def main():
     parser = argparse.ArgumentParser(description="Build the full NWSL analytics dashboard from live ASA data.")
     parser.add_argument("--season", default="2026")
-    parser.add_argument("--minutes", type=int, default=500)
-    parser.add_argument("--top-n", type=int, default=20)
+    parser.add_argument("--minutes", type=int, default=500,
+                         help="Minimum minutes played to qualify for any player-level chart.")
+    parser.add_argument("--top-n", type=int, default=20,
+                         help="How many players appear on the Goals Added leaderboard bar chart. "
+                              "Does NOT limit the scatter charts (Goals vs. xG, xG vs. xA, Shot "
+                              "Quality, Playmaking Style) -- those always plot every qualifying "
+                              "player above --minutes.")
     parser.add_argument("--out", default="dashboard.html")
     args = parser.parse_args()
 
@@ -254,11 +286,13 @@ def main():
     print(f"Fetching NWSL {args.season} player xG/xA data (min {args.minutes} minutes)...")
     player_pool = fetch_player_pool(args.season, args.minutes, teams, players)
     chart_finishing, chart_creation, chart_shot_quality = build_finishing_creation_shotquality(
-        player_pool, top_n=args.top_n, minimum_minutes=args.minutes)
+        player_pool, minimum_minutes=args.minutes)
+    print(f"  -> {len(player_pool)} players qualify; Goals vs. xG / xG vs. xA / Shot Quality "
+          f"now plot all of them (previously capped at top {args.top_n} by combined xG+xA).")
 
     print(f"Fetching NWSL {args.season} Goals Added data...")
     chart_goals_added, chart_playmaking, ga_lookup = build_goals_added_chart(
-        args.season, args.minutes, 15, teams, players)
+        args.season, args.minutes, args.top_n, teams, players)
 
     print(f"Fetching NWSL {args.season} goalkeeper data...")
     chart_goalkeepers = build_goalkeeper_chart(args.season, args.minutes, teams, players)

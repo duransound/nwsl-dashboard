@@ -36,6 +36,10 @@ fi
 
 SEASON="${NWSL_SEASON:-2026}"
 MINUTES="${NWSL_MIN_MINUTES:-500}"
+# TOP_N now controls only the Goals Added leaderboard bar chart's length --
+# the scatter charts (Goals vs. xG, xG vs. xA, Shot Quality, Playmaking
+# Style) always plot every player above MINUTES, full league, regardless of
+# this value (round 13, see build_dashboard.py's docstring).
 TOP_N="${NWSL_TOP_N:-20}"
 TIMESTAMP="$(date +%Y-%m-%d)"
 

@@ -33,6 +33,10 @@ if (Test-Path ".venv\Scripts\Activate.ps1") {
 
 $Season = if ($env:NWSL_SEASON) { $env:NWSL_SEASON } else { "2026" }
 $Minutes = if ($env:NWSL_MIN_MINUTES) { $env:NWSL_MIN_MINUTES } else { "500" }
+# TopN now controls only the Goals Added leaderboard bar chart's length --
+# the scatter charts (Goals vs. xG, xG vs. xA, Shot Quality, Playmaking
+# Style) always plot every player above Minutes, full league, regardless of
+# this value (round 13, see build_dashboard.py's docstring).
 $TopN = if ($env:NWSL_TOP_N) { $env:NWSL_TOP_N } else { "20" }
 $Timestamp = Get-Date -Format "yyyy-MM-dd"
 

@@ -5,7 +5,7 @@
 <title>NWSL 2026 Analytics Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Karla:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Karla:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Cg transform='translate(100,100)'%3E%3Cg transform='rotate(0)'%3E%3Cpath fill='%23C98A2E' stroke='%231F1B16' stroke-width='4' d='M0,0 C-22,-11 -37,-33 -33,-55 C-29,-75 29,-75 33,-55 C37,-33 22,-11 0,0 Z'/%3E%3C/g%3E%3Cg transform='rotate(90)'%3E%3Cpath fill='%23C98A2E' stroke='%231F1B16' stroke-width='4' d='M0,0 C-22,-11 -37,-33 -33,-55 C-29,-75 29,-75 33,-55 C37,-33 22,-11 0,0 Z'/%3E%3C/g%3E%3Cg transform='rotate(180)'%3E%3Cpath fill='%23C98A2E' stroke='%231F1B16' stroke-width='4' d='M0,0 C-22,-11 -37,-33 -33,-55 C-29,-75 29,-75 33,-55 C37,-33 22,-11 0,0 Z'/%3E%3C/g%3E%3Cg transform='rotate(270)'%3E%3Cpath fill='%23C98A2E' stroke='%231F1B16' stroke-width='4' d='M0,0 C-22,-11 -37,-33 -33,-55 C-29,-75 29,-75 33,-55 C37,-33 22,-11 0,0 Z'/%3E%3C/g%3E%3Ccircle r='10' fill='%231F1B16'/%3E%3C/g%3E%3C/svg%3E">
 <style>
   :root {
@@ -22,7 +22,7 @@
     --series-1-ink: #ffffff;
     --red: #e34948;
     --font-body: 'Karla', system-ui, -apple-system, "Segoe UI", sans-serif;
-    --font-head: 'Space Grotesk', system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-head: 'Fraunces', Georgia, serif;
     --font-brand: 'Fraunces', Georgia, serif;
     --brand-amber: #C98A2E;
     --brand-ink: #1F1B16;
@@ -36,7 +36,7 @@
   .masthead-mark { width: 36px; height: 36px; flex: none; }
   .masthead-word { font-family: var(--font-brand); font-weight: 600; font-size: 16px; color: var(--brand-ink); letter-spacing: -0.01em; }
   .app-header { border-top: 1px solid var(--grid); padding-top: 18px; }
-  .app-header h1 { font-family: var(--font-head); font-weight: 500; font-size: 21px; margin: 0 0 4px; }
+  .app-header h1 { font-family: var(--font-head); font-weight: 600; letter-spacing: -0.01em; font-size: 22px; margin: 0 0 4px; }
   .app-header p { font-size: 13px; color: var(--text-secondary); margin: 0 0 20px; max-width: 660px; }
   .tabs { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--grid); margin-bottom: 20px; }
   .tab-btn {
@@ -49,7 +49,7 @@
   .panel { display: none; background: var(--surface-1); border-radius: 12px; padding: 20px 24px 24px; text-align: left; }
   .panel.active { display: block; }
   .panel .kicker { font-family: var(--font-body); font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 6px; }
-  .panel h2 { font-family: var(--font-head); font-weight: 500; font-size: 18px; margin: 0 0 6px; line-height: 1.35; max-width: 640px; }
+  .panel h2 { font-family: var(--font-head); font-weight: 600; letter-spacing: -0.01em; font-size: 18px; margin: 0 0 6px; line-height: 1.35; max-width: 640px; }
   .panel .blurb { font-size: 12.5px; color: var(--text-secondary); margin: 0 0 16px; max-width: 640px; }
   .panel select {
     font-family: var(--font-body); font-size: 13px; font-weight: 500; color: var(--text-primary);
