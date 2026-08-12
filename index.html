@@ -203,7 +203,21 @@ function drawDivergingBar(container, cfg) {
     // that already exists.
     const effective = activeCid === null ? cfg.data
       : cfg.data.map(d => ({...d, highlight: d.__cid === activeCid}));
-    const data = [...effective].sort((a, b) => a.value - b.value);
+
+    // onSelect: optional hook so a caller can react to the reader reassigning
+    // the highlight -- passed the clicked row, or null when showing the curated
+    // default. Used by drawPresetCompare to swap the panel's headline/blurb to
+    // the clicked player. Absent on every existing chart, so behavior there is
+    // unchanged.
+    if (cfg.onSelect) {
+      cfg.onSelect(activeCid === null
+        ? null
+        : effective.find(d => d.__cid === activeCid) || null);
+    }
+    // sortDesc: leaderboards read #1-at-top. Diverging data (xG differential)
+    // keeps the default ascending order, where most-negative-at-top is the
+    // conventional layout. Absent/false preserves the original behavior exactly.
+    const data = [...effective].sort((a, b) => cfg.sortDesc ? b.value - a.value : a.value - b.value);
     const longestLabel = Math.max(...data.map(d => d.label.length));
     const margin = {top: 8, right: 30, bottom: 34, left: Math.max(90, longestLabel * 6.5 + 12)};
     const width = 820 - margin.left - margin.right;
@@ -716,6 +730,91 @@ function drawSeasonCompare(container, cfg) {
   render();
 }
 
+function drawPresetCompare(container, cfg) {
+  // Same dropdown-driven pattern as drawSeasonCompare, but the picker selects a
+  // WEIGHTING preset rather than a season. Two deliberate differences:
+  //   - The panel headline above this chart states rank stability across every
+  //     weighting and does NOT change with the dropdown -- that stability is
+  //     the finding. The dropdown only changes which single bar is emphasized.
+  //   - sortDesc, because this is a ranked leaderboard rather than diverging
+  //     data, so #1 belongs at the top.
+  const pickerRow = document.createElement("div");
+  pickerRow.className = "picker-row";
+
+  const group = document.createElement("div");
+  group.className = "picker-group";
+  const pickerLabel = document.createElement("div");
+  pickerLabel.className = "picker-label";
+  pickerLabel.textContent = cfg.pickerLabel || "Weighting";
+  const presetSelect = document.createElement("select");
+  cfg.presets.forEach(p => {
+    const opt = el2("option", {value: p.key});
+    opt.textContent = p.label;
+    presetSelect.appendChild(opt);
+  });
+  presetSelect.value = cfg.defaultPreset || cfg.presets[0].key;
+  group.appendChild(pickerLabel);
+  group.appendChild(presetSelect);
+  pickerRow.appendChild(group);
+  container.appendChild(pickerRow);
+
+  const chartMount = document.createElement("div");
+  container.appendChild(chartMount);
+  const caption = document.createElement("p");
+  caption.className = "compare-caption";
+  container.appendChild(caption);
+
+  // The panel's own <h2>/blurb live OUTSIDE this chart mount (they're built by
+  // the tab loop below), so reach up to them. Clicking a bar swaps in that
+  // player's headline and story; deselecting restores the panel's default --
+  // the league-wide stability finding. Stashing the defaults on first run means
+  // a revert never has to reconstruct them from cfg.
+  const panel = container.closest(".panel");
+  const headEl = panel ? panel.querySelector("h2") : null;
+  const blurbEl = panel ? panel.querySelector(".blurb") : null;
+  const defaultHead = headEl ? headEl.textContent : "";
+  const defaultBlurb = blurbEl ? blurbEl.textContent : "";
+  // Announce the swap to screen readers -- the visual change is obvious, the
+  // text change is not.
+  if (headEl) headEl.setAttribute("aria-live", "polite");
+
+  function showSelection(row) {
+    if (!headEl || !blurbEl) return;
+    if (row && row.headline) {
+      headEl.textContent = row.headline;
+      blurbEl.textContent = row.story || "";
+    } else {
+      headEl.textContent = defaultHead;
+      blurbEl.textContent = defaultBlurb;
+    }
+  }
+
+  function render() {
+    chartMount.innerHTML = "";
+    const rows = (cfg.byPreset || {})[presetSelect.value] || [];
+    if (rows.length === 0) {
+      caption.textContent = "No qualifying players for this weighting.";
+      return;
+    }
+    drawDivergingBar(chartMount, {
+      data: rows.map(r => ({label: r.label, value: r.value,
+                            highlight: r.highlight, extra: r.extra,
+                            headline: r.headline, story: r.story})),
+      valueLabel: cfg.valueLabel,
+      xAxisLabel: cfg.xAxisLabel || cfg.valueLabel,
+      oneSided: true, sortDesc: true,
+      onSelect: showSelection,
+    });
+    caption.textContent = (cfg.captions || {})[presetSelect.value] || "";
+  }
+
+  // Changing the weighting rebuilds the bar chart, which resets its own
+  // selection to null and fires onSelect(null) -- so the panel text returns to
+  // the default automatically, no extra reset needed here.
+  presetSelect.addEventListener("change", render);
+  render();
+}
+
 function drawShotMap(container, cfg) {
   // Pitch diagram in StatsBomb's coordinate system (0-120 long, 0-80
   // wide), shots normalized to attack rightward so they cluster near the
@@ -812,6 +911,7 @@ CHARTS.forEach((chart, i) => {
   if (chart.type === "team-compare") drawTeamCompare(mount, chart);
   if (chart.type === "line") drawLine(mount, chart);
   if (chart.type === "season-compare") drawSeasonCompare(mount, chart);
+  if (chart.type === "preset-compare") drawPresetCompare(mount, chart);
   if (chart.type === "shot-map") drawShotMap(mount, chart);
 });
 </script>
