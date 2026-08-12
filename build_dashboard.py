@@ -57,8 +57,8 @@ import sys
 import requests
 
 from chart_builders import (
-    build_finishing_creation_shotquality, build_team_charts, build_team_compare_chart,
-    build_team_goals_added_chart, per96, scatter_display_params,
+    build_finishing_creation_shotquality, build_story_lede, build_team_charts,
+    build_team_compare_chart, build_team_goals_added_chart, per96, scatter_display_params,
 )
 from dashboard_template import render_dashboard
 
@@ -89,14 +89,29 @@ def fetch_team_charts(season, teams):
 def fetch_team_goals_added(season, teams):
     """One call gets every team at once (unlike the player-level endpoint,
     /teams/goals-added has no team_id filter requirement to return everyone),
-    so this is cheap on the live path -- no per-team looping needed."""
+    so this is cheap on the live path -- no per-team looping needed.
+
+    Bug fix (round 15, caught by a real live run): each row is NOT a flat
+    {team_id, goals_added_for, goals_added_against} record -- like the
+    player-level /players/goals-added endpoint, it nests a per-action-type
+    breakdown under `data` (confirmed via a live fetch: each row is
+    {team_id, minutes, data: [{action_type, num_actions_for,
+    goals_added_for, num_actions_against, goals_added_against}, ...]} across
+    the 6-7 action categories). The original code read goals_added_for/
+    goals_added_against directly off the row, which KeyErrors on live data
+    every time -- this had never actually been exercised against the live
+    API before now (round 10 built and verified it only against the demo
+    snapshot, which hardcodes already-summed team totals). Fixed by summing
+    across each team's `data` list, the same pattern already used for the
+    player-level endpoint elsewhere in this file."""
     rows = requests.get(f"{BASE_URL}/teams/goals-added", params={"season_name": season}, timeout=30).json()
     totals = {}
     for r in rows:
         team_id = r["team_id"][0] if isinstance(r["team_id"], list) else r["team_id"]
         t = totals.setdefault(team_id, {"ga_for": 0.0, "ga_against": 0.0})
-        t["ga_for"] += r["goals_added_for"]
-        t["ga_against"] += r["goals_added_against"]
+        for action in r.get("data", []):
+            t["ga_for"] += action.get("goals_added_for", 0.0)
+            t["ga_against"] += action.get("goals_added_against", 0.0)
     return build_team_goals_added_chart([
         {
             "abbr": teams.get(team_id, {}).get("team_abbreviation", team_id),
@@ -110,15 +125,23 @@ def fetch_team_goals_added(season, teams):
 def fetch_player_pool(season, minimum_minutes, teams, players):
     rows = requests.get(f"{BASE_URL}/players/xgoals",
                          params={"season_name": season, "minimum_minutes": minimum_minutes}, timeout=30).json()
-    return [
-        {
+    out = []
+    for r in rows:
+        # Round 15 bug fix: /players/xgoals returns team_id as a LIST (like
+        # /players/goals-added and /goalkeepers/xgoals elsewhere in this
+        # file, both of which already normalize it) -- a bare
+        # teams.get(r["team_id"], ...) TypeErrors with "unhashable type:
+        # list" the moment this runs against live data. Same fix as those:
+        # unwrap to the first (only observed) element before using it as a
+        # dict key.
+        team_id = r["team_id"][0] if isinstance(r["team_id"], list) else r["team_id"]
+        out.append({
             "id": r["player_id"], "name": players.get(r["player_id"], r["player_id"]),
-            "team": teams.get(r["team_id"], {}).get("team_abbreviation", r["team_id"]),
+            "team": teams.get(team_id, {}).get("team_abbreviation", team_id),
             "minutes": r["minutes"], "xg": r["xgoals"], "xa": r["xassists"],
             "goals": r["goals"], "shots": r.get("shots", 0),
-        }
-        for r in rows
-    ]
+        })
+    return out
 
 
 def build_goals_added_chart(season, minimum_minutes, leaderboard_n, teams, players):
@@ -250,8 +273,11 @@ def fetch_team_compare_chart(season, minimum_minutes, teams, players, ga_lookup)
     roster_rows = []
     team_names = {}
     for r in rows:
-        abbr = teams.get(r["team_id"], {}).get("team_abbreviation", r["team_id"])
-        team_names[abbr] = teams.get(r["team_id"], {}).get("team_name", abbr)
+        # Same round-15 fix as fetch_player_pool -- /players/xgoals returns
+        # team_id as a list, not a bare string.
+        team_id = r["team_id"][0] if isinstance(r["team_id"], list) else r["team_id"]
+        abbr = teams.get(team_id, {}).get("team_abbreviation", team_id)
+        team_names[abbr] = teams.get(team_id, {}).get("team_name", abbr)
         roster_rows.append({
             "id": r["player_id"], "name": players.get(r["player_id"], r["player_id"]), "team": abbr,
             "minutes": r["minutes"], "xg": r["xgoals"], "xa": r["xassists"],
@@ -309,10 +335,13 @@ def main():
         charts.append(chart_goalkeepers)
     charts.append(chart_team_compare)
 
+    story = build_story_lede(charts)
+
     html = render_dashboard(
         title=f"NWSL {args.season} Analytics Dashboard",
         subtitle="Team and player xG stats from the American Soccer Analysis API — each tab leads with the finding, not just the metric.",
         charts=charts,
+        story=story,
     )
     with open(args.out, "w") as f:
         f.write(html)

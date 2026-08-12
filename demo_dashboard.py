@@ -69,8 +69,8 @@ locally against the live API).
 """
 
 from chart_builders import (
-    build_finishing_creation_shotquality, build_team_charts, build_team_compare_chart,
-    build_team_goals_added_chart, per96,
+    build_finishing_creation_shotquality, build_story_lede, build_team_charts,
+    build_team_compare_chart, build_team_goals_added_chart, per96,
 )
 from dashboard_template import render_dashboard
 
@@ -310,14 +310,18 @@ chart_team_compare = build_team_compare_chart(roster_pool, TEAM_NAMES, ga_by_nam
 chart_team_compare["blurb"] = "Pick a team to see how its players stack up on a given metric. All 16 teams, 2+ players each."
 chart_team_compare["footnote"] = "xGoals, xAssists, Goals, and Shots shown per 96 minutes. Goals Added shown as 0.00 for players outside this demo's top-15 GA leaderboard, not a true zero."
 
+_charts = [
+    chart_quadrant, chart_diff, chart_team_ga, chart_shot_quality, chart_playmaking,
+    chart_finishing, chart_creation, chart_goals_added, chart_goalkeepers,
+    chart_team_compare,
+]
+_story = build_story_lede(_charts)
+
 html = render_dashboard(
     title="NWSL 2026 Analytics Dashboard",
     subtitle="Team and player xG stats from the American Soccer Analysis API — each tab leads with the finding, not just the metric. Demo build; see footnotes for exact scope.",
-    charts=[
-        chart_quadrant, chart_diff, chart_team_ga, chart_shot_quality, chart_playmaking,
-        chart_finishing, chart_creation, chart_goals_added, chart_goalkeepers,
-        chart_team_compare,
-    ],
+    charts=_charts,
+    story=_story,
 )
 with open("dashboard_demo.html", "w") as f:
     f.write(html)

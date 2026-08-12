@@ -226,6 +226,36 @@ def build_team_goals_added_chart(team_rows):
     }
 
 
+def build_story_lede(charts):
+    """Dashboard-level "Big Idea" (Duarte) for the top of the page, stitched
+    from two chart insights that are already computed elsewhere rather than
+    a fresh pass over raw data: the league-wide team finding (opens on "what
+    is", per the Design Guidelines' sequencing rule) and one player-level
+    finding (narrows to "what could be"). Every chart's `title` field is
+    already a vetted, insight-stating sentence (Design Guidelines §2), so
+    reusing it verbatim means this can never assert something a tab doesn't
+    actually support, and it can't drift out of sync as data changes week to
+    week -- it always reflects whatever each tab is currently highlighting.
+
+    charts: the same list passed to render_dashboard(). Tabs that don't
+    exist on a given run (e.g. no goalkeeper clears the minutes floor) are
+    skipped gracefully via player_priority's fallback order. Returns None
+    if there's no team-level chart to open on (shouldn't happen in practice,
+    but keeps this defensive rather than assuming tab order/presence)."""
+    by_tab = {c["tabLabel"]: c for c in charts if c}
+    team_chart = by_tab.get("League Picture") or (charts[0] if charts else None)
+    if not team_chart:
+        return None
+
+    player_priority = ["Goals vs. xG", "Playmaking Style", "xG vs. xA", "Shot Quality", "Goalkeepers"]
+    player_chart = next((by_tab[t] for t in player_priority if t in by_tab), None)
+
+    sentences = [team_chart["title"].rstrip(".") + "."]
+    if player_chart and player_chart is not team_chart:
+        sentences.append(player_chart["title"].rstrip(".") + ".")
+    return " ".join(sentences)
+
+
 def build_team_compare_chart(roster_rows, team_names, ga_lookup=None, cap=18):
     """roster_rows: list of {"id": str, "name": str, "team": str (abbr),
     "minutes": int, "xg": float, "xa": float, "goals": int, "shots": int} --
