@@ -335,26 +335,36 @@ function drawScatter(container, cfg) {
     svg.appendChild(g);
     container.appendChild(svg);
 
-    const xMax = Math.max(...data.map(d => d.x)) * 1.15;
-    const yMax = Math.max(...data.map(d => d.y)) * 1.15;
-    const xScale = v => (v / xMax) * width;
+    const xMin = Math.min(...data.map(d => d.x));
+    const xMax = Math.max(...data.map(d => d.x));
+    const yMin = Math.min(...data.map(d => d.y));
+    const yMax = Math.max(...data.map(d => d.y));
+    // Add 15% padding above/below the data range to match the aesthetic of the original design
+    const xRange = xMax - xMin;
+    const yRange = yMax - yMin;
+    const xScaleMin = xMin - xRange * 0.075;
+    const xScaleMax = xMax + xRange * 0.075;
+    const yScaleMin = yMin - yRange * 0.075;
+    const yScaleMax = yMax + yRange * 0.075;
+
+    const xScale = v => ((v - xScaleMin) / (xScaleMax - xScaleMin)) * width;
     // invertY: plot higher values lower on screen (useful when "lower is better",
     // e.g. xG Against, so "up" reads as "good" on both axes at once)
-    const yScale = cfg.invertY ? (v => (v / yMax) * height) : (v => height - (v / yMax) * height);
+    const yScale = cfg.invertY ? (v => ((v - yScaleMin) / (yScaleMax - yScaleMin)) * height) : (v => height - ((v - yScaleMin) / (yScaleMax - yScaleMin)) * height);
 
-    ticksFor(0, xMax, 8).forEach(t => g.appendChild(el("line", {class: "gridline", x1: xScale(t), x2: xScale(t), y1: 0, y2: height})));
-    ticksFor(0, yMax, 8).forEach(t => g.appendChild(el("line", {class: "gridline", x1: 0, x2: width, y1: yScale(t), y2: yScale(t)})));
+    ticksFor(xScaleMin, xScaleMax, 8).forEach(t => g.appendChild(el("line", {class: "gridline", x1: xScale(t), x2: xScale(t), y1: 0, y2: height})));
+    ticksFor(yScaleMin, yScaleMax, 8).forEach(t => g.appendChild(el("line", {class: "gridline", x1: 0, x2: width, y1: yScale(t), y2: yScale(t)})));
 
     const xAxis = el("g", {class: "axis", transform: `translate(0,${height})`});
-    ticksFor(0, xMax, 8).forEach(t => {
-      const txt = el("text", {x: xScale(t), y: 18, "text-anchor": "middle"}); txt.textContent = t; xAxis.appendChild(txt);
+    ticksFor(xScaleMin, xScaleMax, 8).forEach(t => {
+      const txt = el("text", {x: xScale(t), y: 18, "text-anchor": "middle"}); txt.textContent = t.toFixed(t === 0 ? 0 : 2); xAxis.appendChild(txt);
     });
     xAxis.appendChild(el("line", {x1: 0, x2: width, y1: 0, y2: 0}));
     g.appendChild(xAxis);
 
     const yAxis = el("g", {class: "axis"});
-    ticksFor(0, yMax, 8).forEach(t => {
-      const txt = el("text", {x: -10, y: yScale(t) + 4, "text-anchor": "end"}); txt.textContent = t; yAxis.appendChild(txt);
+    ticksFor(yScaleMin, yScaleMax, 8).forEach(t => {
+      const txt = el("text", {x: -10, y: yScale(t) + 4, "text-anchor": "end"}); txt.textContent = t.toFixed(t === 0 ? 0 : 2); yAxis.appendChild(txt);
     });
     yAxis.appendChild(el("line", {x1: 0, x2: 0, y1: 0, y2: height}));
     g.appendChild(yAxis);
