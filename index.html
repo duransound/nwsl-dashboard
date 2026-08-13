@@ -223,10 +223,15 @@ function drawDivergingBar(container, cfg) {
         ? null
         : effective.find(d => d.__cid === activeCid) || null);
     }
-    // sortDesc: leaderboards read #1-at-top. Diverging data (xG differential)
-    // keeps the default ascending order, where most-negative-at-top is the
-    // conventional layout. Absent/false preserves the original behavior exactly.
-    const data = [...effective].sort((a, b) => cfg.sortDesc ? b.value - a.value : a.value - b.value);
+    // Round 21: best-at-top, worst-at-bottom is now the default for every
+    // diverging-bar chart, not just ranked leaderboards -- the earlier
+    // ascending default (most-negative-at-top) read as upside down to a
+    // reader, since row index 0 renders at the top of the SVG (y = i * rowH,
+    // and SVG y grows downward) regardless of what the values mean. sortAsc
+    // is the escape hatch if a future chart genuinely needs the opposite;
+    // nothing in this project currently does. (cfg.sortDesc is no longer
+    // read -- descending is the default now, not an opt-in.)
+    const data = [...effective].sort((a, b) => cfg.sortAsc ? a.value - b.value : b.value - a.value);
     const longestLabel = Math.max(...data.map(d => d.label.length));
     const margin = {top: 8, right: 30, bottom: 34, left: Math.max(90, longestLabel * 6.5 + 12)};
     const width = 820 - margin.left - margin.right;
@@ -741,12 +746,13 @@ function drawSeasonCompare(container, cfg) {
 
 function drawPresetCompare(container, cfg) {
   // Same dropdown-driven pattern as drawSeasonCompare, but the picker selects a
-  // WEIGHTING preset rather than a season. Two deliberate differences:
+  // WEIGHTING preset rather than a season. One deliberate difference:
   //   - The panel headline above this chart states rank stability across every
   //     weighting and does NOT change with the dropdown -- that stability is
   //     the finding. The dropdown only changes which single bar is emphasized.
-  //   - sortDesc, because this is a ranked leaderboard rather than diverging
-  //     data, so #1 belongs at the top.
+  // (Round 21: best-at-top is now drawDivergingBar's default for every chart,
+  // not just this one, so the sortDesc flag this comment used to explain no
+  // longer needs calling out here specifically.)
   const pickerRow = document.createElement("div");
   pickerRow.className = "picker-row";
 
@@ -811,7 +817,7 @@ function drawPresetCompare(container, cfg) {
                             headline: r.headline, story: r.story})),
       valueLabel: cfg.valueLabel,
       xAxisLabel: cfg.xAxisLabel || cfg.valueLabel,
-      oneSided: true, sortDesc: true,
+      oneSided: true,
       onSelect: showSelection,
     });
     caption.textContent = (cfg.captions || {})[presetSelect.value] || "";
