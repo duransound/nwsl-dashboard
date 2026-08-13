@@ -18,6 +18,7 @@
     --grid: #e1e0d9;
     --baseline: #c3c2b7;
     --series-1: #2a78d6;
+    --surface-2: #eceff1;
     --series-1-dark: #1c5cab;
     --series-1-ink: #ffffff;
     --red: #e34948;
@@ -815,6 +816,113 @@ function drawPresetCompare(container, cfg) {
   render();
 }
 
+function drawPositionGrid(container, cfg) {
+  // Heatmap: teams down, ASA's positions across (defensive-most to
+  // attacking-most, so the grid reads like a pitch). Colour is the established
+  // diverging pair at varying opacity -- no new hues, per the Design
+  // Guidelines' "every non-gray colour maps to something specific" rule.
+  //
+  // Cells without enough minutes are rendered as an explicit neutral, never as
+  // a pale red: "we don't know" must not look like "slightly weak".
+  const positions = cfg.positions;
+  const teams = cfg.teams;
+  const byKey = {};
+  cfg.cells.forEach(c => { byKey[c.abbr + "|" + c.position] = c; });
+
+  const labelW = 54, headH = 22, rowH = 24, gap = 2;
+  const cellW = Math.floor((820 - labelW) / positions.length) - gap;
+  const width = labelW + positions.length * (cellW + gap);
+  const height = headH + teams.length * rowH;
+
+  const panel = container.closest(".panel");
+  const headEl = panel ? panel.querySelector("h2") : null;
+  const blurbEl = panel ? panel.querySelector(".blurb") : null;
+  const defaultHead = headEl ? headEl.textContent : "";
+  const defaultBlurb = blurbEl ? blurbEl.textContent : "";
+  if (headEl) headEl.setAttribute("aria-live", "polite");
+
+  const chartMount = document.createElement("div");
+  container.appendChild(chartMount);
+  const caption = document.createElement("p");
+  caption.className = "compare-caption";
+  container.appendChild(caption);
+
+  const maxAbs = Math.max(
+    ...cfg.cells.filter(c => c.enough).map(c => Math.abs(c.value)), 0.01);
+  let activeKey = null;
+
+  function fillFor(c) {
+    if (!c || !c.enough) return "var(--surface-2, #eceff1)";
+    const t = Math.min(1, Math.abs(c.value) / maxAbs);
+    // Floor the opacity so a near-zero cell is still visibly "measured".
+    return (c.value < 0 ? "rgba(227, 73, 72, " : "rgba(42, 120, 214, ")
+           + (0.15 + 0.85 * t).toFixed(3) + ")";
+  }
+
+  function renderOnce() {
+    chartMount.innerHTML = "";
+    const svg = el("svg", {width: width, height: height});
+    chartMount.appendChild(svg);
+
+    const emphKey = activeKey || cfg.emphasisKey;
+
+    positions.forEach((p, j) => {
+      const t = el("text", {class: "axis-label", x: labelW + j * (cellW + gap) + cellW / 2,
+                            y: headH - 8, "text-anchor": "middle"});
+      t.textContent = p;
+      svg.appendChild(t);
+    });
+
+    teams.forEach((team, i) => {
+      const y = headH + i * rowH;
+      const lbl = el("text", {class: "bar-label", x: labelW - 10,
+                              y: y + rowH / 2 + 4, "text-anchor": "end"});
+      lbl.textContent = team.abbr;
+      svg.appendChild(lbl);
+
+      positions.forEach((p, j) => {
+        const key = team.abbr + "|" + p;
+        const c = byKey[key];
+        const x = labelW + j * (cellW + gap);
+        const isEmph = key === emphKey;
+        const rect = el("rect", {
+          x: x, y: y + 1, width: cellW, height: rowH - 3, rx: 2,
+          fill: fillFor(c),
+          stroke: isEmph ? "var(--ink, #1c1f23)" : "none",
+          "stroke-width": isEmph ? 2 : 0,
+        });
+        rect.style.cursor = c && c.enough ? "pointer" : "default";
+        if (c) {
+          rect.addEventListener("mouseenter", (ev) => showTooltip(c.tooltip, ev));
+          rect.addEventListener("mousemove", moveTooltip);
+          rect.addEventListener("mouseleave", hideTooltip);
+          if (c.enough) {
+            rect.addEventListener("click", (ev) => {
+              ev.stopPropagation();
+              activeKey = (activeKey === key) ? null : key;
+              renderOnce();
+            });
+          }
+        }
+        svg.appendChild(rect);
+      });
+    });
+
+    svg.addEventListener("click", (ev) => {
+      if (ev.target === svg && activeKey !== null) { activeKey = null; renderOnce(); }
+    });
+
+    const shown = activeKey ? byKey[activeKey] : null;
+    if (headEl && blurbEl) {
+      headEl.textContent = shown && shown.headline ? shown.headline : defaultHead;
+      blurbEl.textContent = shown && shown.story ? shown.story : defaultBlurb;
+    }
+    caption.textContent = (shown && shown.caption) || cfg.defaultCaption || "";
+  }
+
+  renderOnce();
+}
+
 function drawShotMap(container, cfg) {
   // Pitch diagram in StatsBomb's coordinate system (0-120 long, 0-80
   // wide), shots normalized to attack rightward so they cluster near the
@@ -912,6 +1020,7 @@ CHARTS.forEach((chart, i) => {
   if (chart.type === "line") drawLine(mount, chart);
   if (chart.type === "season-compare") drawSeasonCompare(mount, chart);
   if (chart.type === "preset-compare") drawPresetCompare(mount, chart);
+  if (chart.type === "position-grid") drawPositionGrid(mount, chart);
   if (chart.type === "shot-map") drawShotMap(mount, chart);
 });
 </script>
