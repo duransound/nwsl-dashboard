@@ -17,10 +17,15 @@
     --text-muted: #898781;
     --grid: #e1e0d9;
     --baseline: #c3c2b7;
-    --series-1: #2a78d6;
+    /* Round 20: series-1 unified with the brand's Amber (was blue #2a78d6) --
+       "positive/emphasis" data color now literally matches --brand-amber below,
+       by explicit user choice. series-1-dark/ink updated to keep contrast and
+       hover-state legible against the new amber fill (white text on amber
+       fails WCAG contrast; dark ink passes). Red stays the negative color. */
+    --series-1: #C98A2E;
     --surface-2: #eceff1;
-    --series-1-dark: #1c5cab;
-    --series-1-ink: #ffffff;
+    --series-1-dark: #8A5A1E;
+    --series-1-ink: #1F1B16;
     --red: #e34948;
     --font-body: 'Karla', system-ui, -apple-system, "Segoe UI", sans-serif;
     --font-head: 'Fraunces', Georgia, serif;
