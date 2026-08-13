@@ -855,7 +855,7 @@ function drawPositionGrid(container, cfg) {
   let activeKey = null;
 
   function fillFor(c) {
-    if (!c || !c.enough) return "var(--surface-2, #eceff1)";
+    if (!c || !c.enough) return "var(--surface-2)";
     const t = Math.min(1, Math.abs(c.value) / maxAbs);
     // Floor the opacity so a near-zero cell is still visibly "measured".
     return (c.value < 0 ? "rgba(227, 73, 72, " : "rgba(42, 120, 214, ")
@@ -891,7 +891,7 @@ function drawPositionGrid(container, cfg) {
         const rect = el("rect", {
           x: x, y: y + 1, width: cellW, height: rowH - 3, rx: 2,
           fill: fillFor(c),
-          stroke: isEmph ? "var(--ink, #1c1f23)" : "none",
+          stroke: isEmph ? "var(--text-primary)" : "none",
           "stroke-width": isEmph ? 2 : 0,
         });
         rect.style.cursor = c && c.enough ? "pointer" : "default";
