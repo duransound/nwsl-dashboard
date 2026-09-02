@@ -120,7 +120,7 @@ qualifying players are in the table under the chart, including the ones inside
 the 1.5-goal cut that keeps the plot readable.
 
 The pipeline behind it is public too, and boring on purpose: raw API responses
-land in DuckDB untouched, a dbt project models them, and 65 data tests have to
+land in DuckDB untouched, a dbt project models them, and 41 data tests have to
 pass before anything reaches the site. One of those tests exists because it
 caught me computing the placement split two different ways in two different
 places, on the first run, before it ever went out.
