@@ -1,0 +1,123 @@
+# ---------------------------------------------------------------------------
+# Weekly NWSL refresh
+#
+# Replaces the local cron job. The difference is not convenience -- it is that
+# this runs whether or not a laptop is awake, and every run leaves a public log
+# showing the data tests passing before anything was published.
+#
+# The order of the steps IS the contract:
+#
+#   1. offline tests        does the code work at all, against a fixture
+#   2. warehouse load       pull the API, then dbt build -- 41 data tests
+#   3. dashboard build      only reached if step 2 passed
+#   4. publish              only reached if step 3 produced a file
+#
+# A failing data test in step 2 stops the job. The dashboard is not rebuilt,
+# index.html is not touched, and the live site keeps serving last week's
+# numbers -- stale and correct, rather than fresh and wrong. That is the same
+# rule the warehouse enforces internally (raw.current_load only sees finished
+# loads), applied one level up.
+#
+# Run it by hand any time from the Actions tab -> Weekly NWSL refresh ->
+# Run workflow.
+# ---------------------------------------------------------------------------
+
+name: Weekly NWSL refresh
+
+on:
+  schedule:
+    # Tuesdays, 15:00 UTC. GitHub cron has no timezone, so this is 08:00
+    # Pacific in summer and 07:00 in winter. Post-weekend either way, which is
+    # what the schedule is actually for.
+    - cron: "0 15 * * 2"
+  workflow_dispatch:
+
+# The job commits the rebuilt index.html back to the repo, which GitHub Pages
+# serves. Nothing else is needed -- no deploy key, no PAT.
+permissions:
+  contents: write
+
+# Never let two refreshes run at once; a second one would race the first's
+# commit. Queue instead of cancelling -- a half-finished refresh is worse than
+# a late one.
+concurrency:
+  group: nwsl-weekly
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Pinned so a run in March behaves like a run in September. Bump these
+      # deliberately, not by accident: the whole point of the tests below is
+      # that a change in behaviour is visible, and an unpinned dependency makes
+      # "what changed" unanswerable.
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "requests==2.34.2" "duckdb==1.5.5" "dbt-duckdb==1.11.0"
+          dbt --version
+
+      # Fixture-based. If this fails the problem is the code, not the league --
+      # worth knowing before spending a single API call.
+      - name: Unit tests (offline, synthetic season)
+        run: python test_warehouse.py
+
+      # Pulls the live API into raw, then hands the transform layer to dbt.
+      # nwsl_warehouse.py exits non-zero if dbt build fails, which fails this
+      # step, which stops the job before anything is published.
+      - name: Load the warehouse and run the data tests
+        run: python nwsl_warehouse.py load --season 2026 --dump-raw raw_snapshots/
+
+      - name: Show what the tests saw
+        run: |
+          python nwsl_warehouse.py sql "
+            SELECT player_name, team_ids_raw, primary_team,
+                   minutes_unsplit, minutes_split, reconciles
+            FROM dw.dq_multi_team ORDER BY minutes_unsplit DESC"
+          python nwsl_warehouse.py sql "
+            SELECT team_abbr, games, round(xgoal_difference,1) AS xg_diff, points
+            FROM dw.fct_team_season ORDER BY xg_diff DESC"
+
+      # Only reached if every data test passed.
+      - name: Rebuild the dashboard
+        run: python build_dashboard.py --season 2026
+
+      - name: Publish to GitHub Pages
+        run: |
+          cp dashboard.html index.html
+          if git diff --quiet -- index.html; then
+            echo "no change since the last refresh -- nothing to publish"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Weekly stats refresh: $(date -u +%Y-%m-%d)"
+          git push
+
+      # The raw payloads and dbt's run results are the audit trail. Keeping
+      # them as artifacts means any run can be re-examined later without
+      # committing megabytes of JSON to the repo -- and it is what makes
+      # "the tests pass" checkable by someone who is not you.
+      - name: Keep the evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-evidence-${{ github.run_number }}
+          retention-days: 90
+          if-no-files-found: warn
+          path: |
+            raw_snapshots/
+            dbt/target/run_results.json
+            dbt/target/manifest.json
