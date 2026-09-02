@@ -35,16 +35,28 @@ if [ -f ".venv/bin/activate" ]; then
 fi
 
 SEASON="${NWSL_SEASON:-2026}"
-MINUTES="${NWSL_MIN_MINUTES:-500}"
+# Minutes qualification is now derived from games played rather than being a
+# fixed number (round 22): a player must average MIN_PER_GAME minutes per
+# game THEIR TEAM has played. 30 is FBref's per-90-leaderboard convention;
+# 45 is starters-only; 20 is more inclusive. See qualification.py.
+MIN_PER_GAME="${NWSL_MIN_PER_GAME:-30}"
+# Escape hatch: set NWSL_MIN_MINUTES to go back to a flat league-wide floor
+# (the pre-round-22 behavior). Left unset, the games-scaled rule applies.
+FLAT_MINUTES="${NWSL_MIN_MINUTES:-}"
 # TOP_N now controls only the Goals Added leaderboard bar chart's length --
 # the scatter charts (Goals vs. xG, xG vs. xA, Shot Quality, Playmaking
-# Style) always plot every player above MINUTES, full league, regardless of
+# Style) always plot every qualifying player, full league, regardless of
 # this value (round 13, see build_dashboard.py's docstring).
 TOP_N="${NWSL_TOP_N:-20}"
 TIMESTAMP="$(date +%Y-%m-%d)"
 
-echo "[$TIMESTAMP] Refreshing NWSL dashboard (season=$SEASON, minutes=$MINUTES, top_n=$TOP_N)..."
-python3 build_dashboard.py --season "$SEASON" --minutes "$MINUTES" --top-n "$TOP_N" --out dashboard.html
+if [ -n "$FLAT_MINUTES" ]; then
+    echo "[$TIMESTAMP] Refreshing NWSL dashboard (season=$SEASON, FLAT minutes=$FLAT_MINUTES, top_n=$TOP_N)..."
+    python3 build_dashboard.py --season "$SEASON" --minutes "$FLAT_MINUTES" --top-n "$TOP_N" --out dashboard.html
+else
+    echo "[$TIMESTAMP] Refreshing NWSL dashboard (season=$SEASON, min $MIN_PER_GAME min per team game played, top_n=$TOP_N)..."
+    python3 build_dashboard.py --season "$SEASON" --minutes-per-game "$MIN_PER_GAME" --top-n "$TOP_N" --out dashboard.html
+fi
 
 # Keep one dated backup per run so you can see how the data changed week to
 # week, without cluttering the folder indefinitely (keeps the last 12).
@@ -63,7 +75,21 @@ if [ -d ".git" ] && git remote get-url origin >/dev/null 2>&1; then
         echo "[$TIMESTAMP] No changes since last deploy -- nothing to push."
     else
         git commit -m "Weekly stats refresh: ${TIMESTAMP}" --quiet
-        if git push --quiet; then
+        # Push to the branch this one tracks, by name, instead of relying on a
+        # bare `git push`. A local branch called something other than its
+        # remote counterpart (very common here: local `master` tracking
+        # `origin/main`, since GitHub renamed the default) makes bare
+        # `git push` abort under the default push.default=simple -- which,
+        # unattended in cron, means the site quietly stops updating while the
+        # local build keeps succeeding. Falls back to plain `git push` when
+        # there's no upstream configured yet.
+        UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
+        if [ -n "$UPSTREAM" ]; then
+            PUSH_CMD=(git push --quiet "${UPSTREAM%%/*}" "HEAD:${UPSTREAM#*/}")
+        else
+            PUSH_CMD=(git push --quiet)
+        fi
+        if "${PUSH_CMD[@]}"; then
             echo "[$TIMESTAMP] Pushed. Live site will update within a minute or two."
         else
             echo "[$TIMESTAMP] WARNING: git push failed -- check your remote/auth (git push manually to see the error)."

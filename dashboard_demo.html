@@ -2,7 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NWSL 2026 Analytics Dashboard</title>
+<meta name="description" content="Team and player xG stats from the American Soccer Analysis API — each tab leads with the finding, not just the metric. Demo build; see the Methods &amp; Data tab for exact scope.">
+<meta property="og:title" content="NWSL 2026 Analytics Dashboard">
+<meta property="og:description" content="Team and player xG stats from the American Soccer Analysis API — each tab leads with the finding, not just the metric. Demo build; see the Methods &amp; Data tab for exact scope.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="NWSL 2026 Analytics Dashboard">
+<meta name="twitter:description" content="Team and player xG stats from the American Soccer Analysis API — each tab leads with the finding, not just the metric. Demo build; see the Methods &amp; Data tab for exact scope.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Karla:wght@400;500;700&display=swap" rel="stylesheet">
@@ -17,9 +25,15 @@
     --text-muted: #898781;
     --grid: #e1e0d9;
     --baseline: #c3c2b7;
-    --series-1: #2a78d6;
-    --series-1-dark: #1c5cab;
-    --series-1-ink: #ffffff;
+    /* Round 20: series-1 unified with the brand's Amber (was blue #2a78d6) --
+       "positive/emphasis" data color now literally matches --brand-amber below,
+       by explicit user choice. series-1-dark/ink updated to keep contrast and
+       hover-state legible against the new amber fill (white text on amber
+       fails WCAG contrast; dark ink passes). Red stays the negative color. */
+    --series-1: #C98A2E;
+    --surface-2: #eceff1;
+    --series-1-dark: #8A5A1E;
+    --series-1-ink: #1F1B16;
     --red: #e34948;
     --font-body: 'Karla', system-ui, -apple-system, "Segoe UI", sans-serif;
     --font-head: 'Fraunces', Georgia, serif;
@@ -77,6 +91,10 @@
   .annotation { fill: var(--text-primary); font-size: 11.5px; font-weight: 600; }
   .bubble { fill: var(--series-1); stroke: var(--surface-1); stroke-width: 2px; cursor: pointer; }
   .bubble.muted { fill: var(--baseline); }
+  /* dense (full-league) scatters: translucent, hairline-edged marks so 250
+     overlapping points read as density instead of a solid gray mass */
+  .bubble.dense { opacity: 0.5; stroke-width: 0.75px; }
+  .bubble.dense:hover, .bubble.dense.hover { opacity: 1; }
   .bubble:hover, .bubble.hover { fill: var(--series-1-dark); }
   .badge-text { fill: var(--series-1-ink); font-size: 9.5px; font-weight: 600; text-anchor: middle; pointer-events: none; }
   .badge-text.muted { fill: var(--text-secondary); }
@@ -89,6 +107,8 @@
   .tooltip .name { font-weight: 600; margin-bottom: 2px; }
   .tooltip .row { color: #d8d8d4; }
   .footnote { font-size: 11px; color: var(--text-muted); margin-top: 14px; }
+  .page-footer { font-size: 11px; color: var(--text-muted); margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--grid); }
+  .page-footer a { color: inherit; }
   .legend { display: flex; gap: 16px; font-size: 11.5px; color: var(--text-secondary); margin-bottom: 10px; }
   .legend-item { display: flex; align-items: center; gap: 6px; }
   .legend-swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
@@ -102,6 +122,69 @@
   .shot-dot.no-goal { fill: var(--surface-1); }
   .shot-dot.muted { stroke: var(--baseline); }
   .shot-dot.muted.no-goal { fill: var(--surface-1); }
+  /* Chance band. Deliberately NOT --series-1: the emphasis color is reserved
+     for the one mark a chart is about, and a large amber wash behind the
+     points would compete with the highlighted bubble for exactly the
+     attention that bubble is supposed to win. A neutral warm gray at low
+     alpha reads as ground, sits under both the amber highlight and the muted
+     crowd, and keeps the gridlines visible through it. */
+  .chance-band { fill: var(--brand-warmgray); opacity: 0.15; pointer-events: none; }
+  .legend-swatch.band-swatch { width: 22px; height: 10px; border-radius: 2px; background: rgba(140, 131, 119, 0.30); }
+  .table-wrap { margin-top: 18px; }
+  .table-caption { font-size: 11.5px; color: var(--text-secondary); margin: 0 0 8px; max-width: 640px; }
+  .table-scroll { max-height: 340px; overflow-y: auto; border: 1px solid var(--grid); border-radius: 8px; }
+  .data-table { width: 100%; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+  .data-table th, .data-table td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  .data-table th {
+    position: sticky; top: 0; background: var(--surface-2); color: var(--text-secondary);
+    font-weight: 700; font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase;
+    cursor: pointer; user-select: none; z-index: 1;
+  }
+  .data-table th:hover, .data-table th:focus { color: var(--text-primary); }
+  .data-table th.sorted { color: var(--series-1-dark); }
+  .data-table th.sorted::after { content: " \2195"; }
+  .data-table td.num, .data-table th.num { text-align: right; }
+  .data-table tbody tr:hover { background: var(--surface-2); }
+  .methods-heading {
+    font-family: var(--font-head); font-size: 15px; font-weight: 600; color: var(--text-primary);
+    margin: 22px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--grid);
+  }
+  .methods-list { margin: 0; font-size: 12.5px; line-height: 1.55; }
+  .methods-list dt { font-weight: 700; color: var(--text-primary); margin-top: 10px; }
+  .methods-list dd { margin: 2px 0 0; color: var(--text-secondary); max-width: 720px; }
+  .download-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+  .download-btn {
+    font-family: var(--font-body); font-size: 12px; font-weight: 600; color: var(--text-primary);
+    background: var(--surface-1); border: 1px solid var(--baseline); border-radius: 6px;
+    padding: 7px 12px; cursor: pointer;
+  }
+  .download-btn:hover { border-color: var(--series-1); color: var(--series-1-dark); }
+  /* ---- Phone-width behaviour ----
+     Most traffic to a shared link is mobile, and until the viewport meta tag
+     above was added this page rendered at desktop width on a phone. The
+     charts are fixed-width SVG, so they scroll horizontally inside their own
+     mount rather than being squashed to illegibility. */
+  .chart-mount { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  @media (max-width: 600px) {
+    .app { padding: 18px 14px 36px; }
+    .app-header h1 { font-size: 19px; }
+    .panel { padding: 16px 14px 18px; }
+    .panel h2 { font-size: 16.5px; }
+    /* Thirteen tabs wrap to six stacked rows at 390px, pushing the first
+       chart most of a screen below the fold -- on the width where most
+       shared links actually get opened. One scrolling row instead: the
+       partially visible next tab is what signals there are more. */
+    .tabs { gap: 2px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab-btn { padding: 8px 10px; font-size: 12px; white-space: nowrap; flex: none; }
+    .story { padding: 14px 16px; }
+    .story-lede { font-size: 14px; }
+    .picker-row { gap: 12px; }
+    .panel select { max-width: 100%; }
+    .table-scroll { overflow-x: auto; }
+    .methods-list dd { max-width: none; }
+    .download-row { gap: 8px; }
+  }
 </style>
 </head>
 <body>
@@ -136,18 +219,19 @@
   </div>
   <div class="app-header">
     <h1>NWSL 2026 Analytics Dashboard</h1>
-    <p>Team and player xG stats from the American Soccer Analysis API — each tab leads with the finding, not just the metric. Demo build; see footnotes for exact scope.</p>
+    <p>Team and player xG stats from the American Soccer Analysis API — each tab leads with the finding, not just the metric. Demo build; see the Methods & Data tab for exact scope.</p>
   </div>
   <div class="story">
     <p class="kicker">This week in the NWSL</p>
-    <p class="story-lede">San Diego Wave FC is the strongest team on both sides of the ball. Barbra Banda is outscoring their xG by more than anyone else in the league.</p>
+    <p class="story-lede">San Diego Wave FC is the strongest team on both sides of the ball. None of these 20 players is finishing distinguishably better than their chances — the spread is what chance alone produces.</p>
   </div>
   <div class="tabs" id="tabs"></div>
   <div id="panels"></div>
+  <p class="page-footer">Data: American Soccer Analysis (americansocceranalysis.com). Built 14 August 2026, 17:09 UTC.</p>
 </div>
 <div class="tooltip" id="tooltip"></div>
 <script>
-const CHARTS = [{"type": "scatter", "tabLabel": "League Picture", "metricLabel": "Team xGF vs. xGA", "title": "San Diego Wave FC is the strongest team on both sides of the ball", "blurb": "xG For (right) vs. xG Against (up, axis inverted so up-right is always the strong quadrant). Dashed lines mark the league median. Team totals for the season, not a per-96 rate.", "xAxisLabel": "xG For (attacking output)", "yAxisLabel": "xG Against (defensive output)", "invertY": true, "medianLines": true, "radius": 15, "data": [{"x": 25.3197, "y": 28.3586, "badge": "DEN", "tooltip": "<div class=\"name\">Denver Summit FC</div><div class=\"row\">xGF 25.3 &middot; xGA 28.4</div>", "highlight": false, "annotation": null}, {"x": 21.4773, "y": 28.7563, "badge": "BAY", "tooltip": "<div class=\"name\">Bay FC</div><div class=\"row\">xGF 21.5 &middot; xGA 28.8</div>", "highlight": false, "annotation": null}, {"x": 21.5574, "y": 34.1282, "badge": "HOU", "tooltip": "<div class=\"name\">Houston Dash</div><div class=\"row\">xGF 21.6 &middot; xGA 34.1</div>", "highlight": false, "annotation": null}, {"x": 34.3005, "y": 24.5646, "badge": "KC", "tooltip": "<div class=\"name\">Kansas City Current</div><div class=\"row\">xGF 34.3 &middot; xGA 24.6</div>", "highlight": false, "annotation": null}, {"x": 31.7159, "y": 16.9189, "badge": "SD", "tooltip": "<div class=\"name\">San Diego Wave FC</div><div class=\"row\">xGF 31.7 &middot; xGA 16.9</div>", "highlight": true, "annotation": "SD: rank #3 attack, #1 defense"}, {"x": 21.3125, "y": 25.108, "badge": "SEA", "tooltip": "<div class=\"name\">Seattle Reign FC</div><div class=\"row\">xGF 21.3 &middot; xGA 25.1</div>", "highlight": false, "annotation": null}, {"x": 13.4942, "y": 40.0946, "badge": "CHI", "tooltip": "<div class=\"name\">Chicago Stars FC</div><div class=\"row\">xGF 13.5 &middot; xGA 40.1</div>", "highlight": false, "annotation": null}, {"x": 26.5152, "y": 28.778, "badge": "POR", "tooltip": "<div class=\"name\">Portland Thorns FC</div><div class=\"row\">xGF 26.5 &middot; xGA 28.8</div>", "highlight": false, "annotation": null}, {"x": 27.1798, "y": 25.2215, "badge": "ORL", "tooltip": "<div class=\"name\">Orlando Pride</div><div class=\"row\">xGF 27.2 &middot; xGA 25.2</div>", "highlight": false, "annotation": null}, {"x": 28.1564, "y": 21.0729, "badge": "WAS", "tooltip": "<div class=\"name\">Washington Spirit</div><div class=\"row\">xGF 28.2 &middot; xGA 21.1</div>", "highlight": false, "annotation": null}, {"x": 30.8618, "y": 25.1192, "badge": "UTA", "tooltip": "<div class=\"name\">Utah Royals FC</div><div class=\"row\">xGF 30.9 &middot; xGA 25.1</div>", "highlight": false, "annotation": null}, {"x": 24.4953, "y": 32.8946, "badge": "LOU", "tooltip": "<div class=\"name\">Racing Louisville FC</div><div class=\"row\">xGF 24.5 &middot; xGA 32.9</div>", "highlight": false, "annotation": null}, {"x": 26.0357, "y": 21.7489, "badge": "LA", "tooltip": "<div class=\"name\">Angel City FC</div><div class=\"row\">xGF 26.0 &middot; xGA 21.7</div>", "highlight": false, "annotation": null}, {"x": 25.9613, "y": 26.0956, "badge": "BOS", "tooltip": "<div class=\"name\">Boston Legacy FC</div><div class=\"row\">xGF 26.0 &middot; xGA 26.1</div>", "highlight": false, "annotation": null}, {"x": 30.509, "y": 20.5859, "badge": "NJY", "tooltip": "<div class=\"name\">NJ/NY Gotham FC</div><div class=\"row\">xGF 30.5 &middot; xGA 20.6</div>", "highlight": false, "annotation": null}, {"x": 33.5379, "y": 22.9842, "badge": "NC", "tooltip": "<div class=\"name\">North Carolina Courage</div><div class=\"row\">xGF 33.5 &middot; xGA 23.0</div>", "highlight": false, "annotation": null}]}, {"type": "diverging-bar", "tabLabel": "Team xG Diff.", "metricLabel": "Team xG Differential (xGF - xGA)", "title": "Chicago Stars FC is being outchanced by 27 expected goals \u2014 the widest gap in the league", "blurb": "xG For minus xG Against, all teams, season through today.", "valueLabel": "xG differential", "xAxisLabel": "xG differential (xGF - xGA)", "data": [{"label": "DEN", "value": -3.038899999999998, "highlight": false}, {"label": "BAY", "value": -7.279, "highlight": false}, {"label": "HOU", "value": -12.570799999999998, "highlight": false}, {"label": "KC", "value": 9.7359, "highlight": false}, {"label": "SD", "value": 14.797, "highlight": false}, {"label": "SEA", "value": -3.7955000000000005, "highlight": false}, {"label": "CHI", "value": -26.6004, "highlight": true}, {"label": "POR", "value": -2.2627999999999986, "highlight": false}, {"label": "ORL", "value": 1.9583000000000013, "highlight": false}, {"label": "WAS", "value": 7.083500000000001, "highlight": false}, {"label": "UTA", "value": 5.7425999999999995, "highlight": false}, {"label": "LOU", "value": -8.399299999999997, "highlight": false}, {"label": "LA", "value": 4.2867999999999995, "highlight": false}, {"label": "BOS", "value": -0.13429999999999964, "highlight": false}, {"label": "NJY", "value": 9.923100000000002, "highlight": false}, {"label": "NC", "value": 10.5537, "highlight": false}], "footnote": "Season in progress \u2014 teams have played 17-20 games each."}, {"type": "diverging-bar", "tabLabel": "Team Goals Added", "metricLabel": "Team Goals Added (g+), net of value conceded", "title": "Chicago Stars FC's on-ball play is the league's single biggest goals-added liability, 22.9 g+ worse than a league-average team", "blurb": "Goals Added (g+) summed across every action type \u2014 value the team's own players created, minus value opposing players created against them. A single on-ball-quality number, independent of the shot-based xG charts.", "valueLabel": "Net Goals Added", "xAxisLabel": "Net Goals Added (g+)", "footnote": "Positive = the team created more on-ball value than it conceded, relative to a league-average team; negative = the reverse. Season totals, not per-96 \u2014 like Team xG Diff., a team doesn't have a \"minutes played\" denominator the way a player does.", "data": [{"label": "DEN", "value": -4.74, "highlight": false, "extra": "Created 25.8 g+ &middot; Conceded 30.6 g+"}, {"label": "BAY", "value": -10.35, "highlight": false, "extra": "Created 21.8 g+ &middot; Conceded 32.1 g+"}, {"label": "HOU", "value": -7.51, "highlight": false, "extra": "Created 25.2 g+ &middot; Conceded 32.7 g+"}, {"label": "KC", "value": 9.56, "highlight": false, "extra": "Created 36.4 g+ &middot; Conceded 26.9 g+"}, {"label": "SD", "value": 6.51, "highlight": false, "extra": "Created 30.0 g+ &middot; Conceded 23.5 g+"}, {"label": "SEA", "value": 2.05, "highlight": false, "extra": "Created 27.0 g+ &middot; Conceded 25.0 g+"}, {"label": "CHI", "value": -22.9, "highlight": true, "extra": "Created 18.2 g+ &middot; Conceded 41.1 g+"}, {"label": "POR", "value": 0.29, "highlight": false, "extra": "Created 30.8 g+ &middot; Conceded 30.5 g+"}, {"label": "ORL", "value": 1.02, "highlight": false, "extra": "Created 30.3 g+ &middot; Conceded 29.3 g+"}, {"label": "WAS", "value": 7.12, "highlight": false, "extra": "Created 31.7 g+ &middot; Conceded 24.5 g+"}, {"label": "UTA", "value": 4.38, "highlight": false, "extra": "Created 32.5 g+ &middot; Conceded 28.1 g+"}, {"label": "LOU", "value": -4.67, "highlight": false, "extra": "Created 30.1 g+ &middot; Conceded 34.8 g+"}, {"label": "LA", "value": 2.19, "highlight": false, "extra": "Created 27.2 g+ &middot; Conceded 25.0 g+"}, {"label": "BOS", "value": 5.46, "highlight": false, "extra": "Created 29.4 g+ &middot; Conceded 23.9 g+"}, {"label": "NJY", "value": 5.1, "highlight": false, "extra": "Created 31.8 g+ &middot; Conceded 26.7 g+"}, {"label": "NC", "value": 6.5, "highlight": false, "extra": "Created 34.1 g+ &middot; Conceded 27.6 g+"}]}, {"type": "scatter", "tabLabel": "Shot Quality", "metricLabel": "Shots Taken vs. xG per Shot, per 96 minutes", "title": "Evelyn Ijeh gets more out of every shot than anyone else in the league", "blurb": "Same player pool (min. 10 shots, 20 qualify) \u2014 shot volume per 96 minutes (right) vs. average shot quality, xG per shot (up), so players with different minutes played are compared fairly. Low-and-right = high volume, low quality; up-and-left = fewer, better shots.", "xAxisLabel": "Shots per 96 min", "yAxisLabel": "xG per shot", "radius": 15, "showBadges": true, "data": [{"x": 2.3276, "y": 0.144, "badge": "KC", "tooltip": "<div class=\"name\">Croix Bethune</div><div class=\"row\">KC &middot; 41 shots (2.3/96)</div><div class=\"row\">xG 5.90 &middot; xG/shot 0.144</div>", "highlight": false, "annotation": null}, {"x": 4.6944, "y": 0.102, "badge": "POR", "tooltip": "<div class=\"name\">Sophia Wilson</div><div class=\"row\">POR &middot; 80 shots (4.7/96)</div><div class=\"row\">xG 8.16 &middot; xG/shot 0.102</div>", "highlight": false, "annotation": null}, {"x": 3.4634, "y": 0.1285, "badge": "WAS", "tooltip": "<div class=\"name\">Trinity Rodman</div><div class=\"row\">WAS &middot; 64 shots (3.5/96)</div><div class=\"row\">xG 8.22 &middot; xG/shot 0.128</div>", "highlight": false, "annotation": null}, {"x": 4.6414, "y": 0.1402, "badge": "ORL", "tooltip": "<div class=\"name\">Barbra Banda</div><div class=\"row\">ORL &middot; 60 shots (4.6/96)</div><div class=\"row\">xG 8.41 &middot; xG/shot 0.140</div>", "highlight": false, "annotation": null}, {"x": 3.2, "y": 0.1681, "badge": "BOS", "tooltip": "<div class=\"name\">Aissata Traore</div><div class=\"row\">BOS &middot; 47 shots (3.2/96)</div><div class=\"row\">xG 7.90 &middot; xG/shot 0.168</div>", "highlight": false, "annotation": null}, {"x": 2.5507, "y": 0.2472, "badge": "NC", "tooltip": "<div class=\"name\">Evelyn Ijeh</div><div class=\"row\">NC &middot; 33 shots (2.6/96)</div><div class=\"row\">xG 8.16 &middot; xG/shot 0.247</div>", "highlight": true, "annotation": "Ijeh: 0.25 xG/shot on 2.6 shots/96"}, {"x": 1.8451, "y": 0.1428, "badge": "UTA", "tooltip": "<div class=\"name\">Cloe Lacasse</div><div class=\"row\">UTA &middot; 34 shots (1.8/96)</div><div class=\"row\">xG 4.86 &middot; xG/shot 0.143</div>", "highlight": false, "annotation": null}, {"x": 2.7352, "y": 0.1309, "badge": "NJY", "tooltip": "<div class=\"name\">Jordynn Dudley</div><div class=\"row\">NJY &middot; 41 shots (2.7/96)</div><div class=\"row\">xG 5.37 &middot; xG/shot 0.131</div>", "highlight": false, "annotation": null}, {"x": 2.6459, "y": 0.1339, "badge": "UTA", "tooltip": "<div class=\"name\">Mina Tanaka</div><div class=\"row\">UTA &middot; 39 shots (2.6/96)</div><div class=\"row\">xG 5.22 &middot; xG/shot 0.134</div>", "highlight": false, "annotation": null}, {"x": 2.4329, "y": 0.1371, "badge": "POR", "tooltip": "<div class=\"name\">Olivia Moultrie</div><div class=\"row\">POR &middot; 37 shots (2.4/96)</div><div class=\"row\">xG 5.07 &middot; xG/shot 0.137</div>", "highlight": false, "annotation": null}, {"x": 2.0192, "y": 0.0907, "badge": "WAS", "tooltip": "<div class=\"name\">Leicy Santos</div><div class=\"row\">WAS &middot; 35 shots (2.0/96)</div><div class=\"row\">xG 3.17 &middot; xG/shot 0.091</div>", "highlight": false, "annotation": null}, {"x": 1.4669, "y": 0.1165, "badge": "NC", "tooltip": "<div class=\"name\">Riley Jackson</div><div class=\"row\">NC &middot; 27 shots (1.5/96)</div><div class=\"row\">xG 3.15 &middot; xG/shot 0.117</div>", "highlight": false, "annotation": null}, {"x": 2.0163, "y": 0.1347, "badge": "HOU", "tooltip": "<div class=\"name\">Katherine Rader</div><div class=\"row\">HOU &middot; 36 shots (2.0/96)</div><div class=\"row\">xG 4.85 &middot; xG/shot 0.135</div>", "highlight": false, "annotation": null}, {"x": 2.4774, "y": 0.1709, "badge": "KC", "tooltip": "<div class=\"name\">Debinha</div><div class=\"row\">KC &middot; 24 shots (2.5/96)</div><div class=\"row\">xG 4.10 &middot; xG/shot 0.171</div>", "highlight": false, "annotation": null}, {"x": 3.152, "y": 0.1594, "badge": "BOS", "tooltip": "<div class=\"name\">Amanda Santos</div><div class=\"row\">BOS &middot; 35 shots (3.2/96)</div><div class=\"row\">xG 5.58 &middot; xG/shot 0.159</div>", "highlight": false, "annotation": null}, {"x": 2.7715, "y": 0.1101, "badge": "SD", "tooltip": "<div class=\"name\">Dudinha</div><div class=\"row\">SD &middot; 36 shots (2.8/96)</div><div class=\"row\">xG 3.96 &middot; xG/shot 0.110</div>", "highlight": false, "annotation": null}, {"x": 2.1028, "y": 0.1795, "badge": "LA", "tooltip": "<div class=\"name\">Sveind\u00eds Jane J\u00f3nsd\u00f3ttir</div><div class=\"row\">LA &middot; 26 shots (2.1/96)</div><div class=\"row\">xG 4.67 &middot; xG/shot 0.179</div>", "highlight": false, "annotation": null}, {"x": 2.4177, "y": 0.1016, "badge": "NJY", "tooltip": "<div class=\"name\">Jaedyn Shaw</div><div class=\"row\">NJY &middot; 41 shots (2.4/96)</div><div class=\"row\">xG 4.16 &middot; xG/shot 0.102</div>", "highlight": false, "annotation": null}, {"x": 1.9525, "y": 0.169, "badge": "SD", "tooltip": "<div class=\"name\">Lia Eugenia Godfrey</div><div class=\"row\">SD &middot; 24 shots (2.0/96)</div><div class=\"row\">xG 4.06 &middot; xG/shot 0.169</div>", "highlight": false, "annotation": null}, {"x": 2.7079, "y": 0.1221, "badge": "SEA", "tooltip": "<div class=\"name\">Maddie Mercado</div><div class=\"row\">SEA &middot; 42 shots (2.7/96)</div><div class=\"row\">xG 5.13 &middot; xG/shot 0.122</div>", "highlight": false, "annotation": null}]}, {"type": "scatter", "tabLabel": "Playmaking Style", "metricLabel": "Goals Added: Dribbling vs. Passing, per 96 minutes", "title": "Emma Sears creates almost entirely through passing, not dribbling", "blurb": "The 15 Goals Added leaders, split into two of the metric's six action categories \u2014 value created by beating defenders on the dribble (right) vs. value created by passing (up), shown per 96 minutes so players with different minutes played are compared fairly.", "xAxisLabel": "Dribbling g+ per 96 min", "yAxisLabel": "Passing g+ per 96 min", "radius": 15, "data": [{"x": 0.0359, "y": 0.0695, "badge": "POR", "tooltip": "<div class=\"name\">Sophia Wilson</div><div class=\"row\">POR &middot; 1636 min</div><div class=\"row\">Dribbling +0.61 g+ (+0.036/96) &middot; Passing +1.18 g+ (+0.069/96)</div>", "highlight": false, "annotation": null}, {"x": 0.1429, "y": 0.0157, "badge": "ORL", "tooltip": "<div class=\"name\">Barbra Banda</div><div class=\"row\">ORL &middot; 1241 min</div><div class=\"row\">Dribbling +1.85 g+ (+0.143/96) &middot; Passing +0.20 g+ (+0.016/96)</div>", "highlight": false, "annotation": null}, {"x": 0.0764, "y": 0.0317, "badge": "WAS", "tooltip": "<div class=\"name\">Trinity Rodman</div><div class=\"row\">WAS &middot; 1774 min</div><div class=\"row\">Dribbling +1.41 g+ (+0.076/96) &middot; Passing +0.59 g+ (+0.032/96)</div>", "highlight": false, "annotation": null}, {"x": 0.022, "y": 0.0474, "badge": "POR", "tooltip": "<div class=\"name\">Olivia Moultrie</div><div class=\"row\">POR &middot; 1460 min</div><div class=\"row\">Dribbling +0.33 g+ (+0.022/96) &middot; Passing +0.72 g+ (+0.047/96)</div>", "highlight": false, "annotation": null}, {"x": 0.0992, "y": 0.0223, "badge": "BAY", "tooltip": "<div class=\"name\">Racheal Kundananji</div><div class=\"row\">BAY &middot; 853 min</div><div class=\"row\">Dribbling +0.88 g+ (+0.099/96) &middot; Passing +0.20 g+ (+0.022/96)</div>", "highlight": false, "annotation": null}, {"x": 0.0212, "y": 0.0394, "badge": "SD", "tooltip": "<div class=\"name\">Dudinha</div><div class=\"row\">SD &middot; 1247 min</div><div class=\"row\">Dribbling +0.28 g+ (+0.021/96) &middot; Passing +0.51 g+ (+0.039/96)</div>", "highlight": false, "annotation": null}, {"x": 0.0134, "y": 0.0692, "badge": "LOU", "tooltip": "<div class=\"name\">Emma Sears</div><div class=\"row\">LOU &middot; 1453 min</div><div class=\"row\">Dribbling +0.20 g+ (+0.013/96) &middot; Passing +1.05 g+ (+0.069/96)</div>", "highlight": true, "annotation": "Sears: +0.069 g+/96 passing vs. +0.013 g+/96 dribbling"}, {"x": 0.038, "y": 0.0145, "badge": "NC", "tooltip": "<div class=\"name\">Evelyn Ijeh</div><div class=\"row\">NC &middot; 1242 min</div><div class=\"row\">Dribbling +0.49 g+ (+0.038/96) &middot; Passing +0.19 g+ (+0.014/96)</div>", "highlight": false, "annotation": null}, {"x": 0.0554, "y": 0.0216, "badge": "SD", "tooltip": "<div class=\"name\">Gia Corley</div><div class=\"row\">SD &middot; 1071 min</div><div class=\"row\">Dribbling +0.62 g+ (+0.055/96) &middot; Passing +0.24 g+ (+0.022/96)</div>", "highlight": false, "annotation": null}, {"x": 0.0101, "y": 0.0315, "badge": "SEA", "tooltip": "<div class=\"name\">Maddie Mercado</div><div class=\"row\">SEA &middot; 1489 min</div><div class=\"row\">Dribbling +0.16 g+ (+0.010/96) &middot; Passing +0.49 g+ (+0.032/96)</div>", "highlight": false, "annotation": null}, {"x": 0.0252, "y": 0.0574, "badge": "KC", "tooltip": "<div class=\"name\">Debinha</div><div class=\"row\">KC &middot; 930 min</div><div class=\"row\">Dribbling +0.24 g+ (+0.025/96) &middot; Passing +0.56 g+ (+0.057/96)</div>", "highlight": false, "annotation": null}, {"x": 0.0265, "y": 0.0203, "badge": "BOS", "tooltip": "<div class=\"name\">Aissata Traore</div><div class=\"row\">BOS &middot; 1410 min</div><div class=\"row\">Dribbling +0.39 g+ (+0.026/96) &middot; Passing +0.30 g+ (+0.020/96)</div>", "highlight": false, "annotation": null}, {"x": 0.018, "y": 0.0272, "badge": "SD", "tooltip": "<div class=\"name\">Lia Eugenia Godfrey</div><div class=\"row\">SD &middot; 1180 min</div><div class=\"row\">Dribbling +0.22 g+ (+0.018/96) &middot; Passing +0.33 g+ (+0.027/96)</div>", "highlight": false, "annotation": null}, {"x": 0.006, "y": 0.0245, "badge": "POR", "tooltip": "<div class=\"name\">Pietra Tordin</div><div class=\"row\">POR &middot; 1574 min</div><div class=\"row\">Dribbling +0.10 g+ (+0.006/96) &middot; Passing +0.40 g+ (+0.025/96)</div>", "highlight": false, "annotation": null}, {"x": 0.0216, "y": 0.0089, "badge": "SD", "tooltip": "<div class=\"name\">Ludmila</div><div class=\"row\">SD &middot; 1389 min</div><div class=\"row\">Dribbling +0.31 g+ (+0.022/96) &middot; Passing +0.13 g+ (+0.009/96)</div>", "highlight": false, "annotation": null}]}, {"type": "scatter", "tabLabel": "Goals vs. xG", "metricLabel": "Player Goals vs. xGoals, per 96 minutes", "title": "Barbra Banda is outscoring their xG by more than anyone else in the league", "blurb": "Top 20 players by combined xG+xA, 500+ minutes played, shown per 96 minutes (roughly a full match) so players with different minutes are compared fairly. Above the dashed line = scoring more than the shots \u201cdeserved\u201d; below = underperforming their chances.", "xAxisLabel": "xGoals per 96 min", "yAxisLabel": "Goals per 96 min", "refLine": true, "radius": 15, "showBadges": true, "data": [{"x": 0.3351, "y": 0.1703, "badge": "KC", "tooltip": "<div class=\"name\">Croix Bethune</div><div class=\"row\">KC &middot; 1691 min</div><div class=\"row\">xG/96 0.34 &middot; Goals/96 0.17 &middot; Goals 3</div>", "highlight": false, "annotation": null}, {"x": 0.479, "y": 0.5281, "badge": "POR", "tooltip": "<div class=\"name\">Sophia Wilson</div><div class=\"row\">POR &middot; 1636 min</div><div class=\"row\">xG/96 0.48 &middot; Goals/96 0.53 &middot; Goals 9</div>", "highlight": false, "annotation": null}, {"x": 0.4449, "y": 0.487, "badge": "WAS", "tooltip": "<div class=\"name\">Trinity Rodman</div><div class=\"row\">WAS &middot; 1774 min</div><div class=\"row\">xG/96 0.44 &middot; Goals/96 0.49 &middot; Goals 9</div>", "highlight": false, "annotation": null}, {"x": 0.6505, "y": 0.9283, "badge": "ORL", "tooltip": "<div class=\"name\">Barbra Banda</div><div class=\"row\">ORL &middot; 1241 min</div><div class=\"row\">xG/96 0.65 &middot; Goals/96 0.93 &middot; Goals 12</div>", "highlight": true, "annotation": "0.93 goals/96 on 0.65 xG/96 (+0.28)"}, {"x": 0.5379, "y": 0.3404, "badge": "BOS", "tooltip": "<div class=\"name\">Aissata Traore</div><div class=\"row\">BOS &middot; 1410 min</div><div class=\"row\">xG/96 0.54 &middot; Goals/96 0.34 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.6305, "y": 0.6957, "badge": "NC", "tooltip": "<div class=\"name\">Evelyn Ijeh</div><div class=\"row\">NC &middot; 1242 min</div><div class=\"row\">xG/96 0.63 &middot; Goals/96 0.70 &middot; Goals 9</div>", "highlight": false, "annotation": null}, {"x": 0.2635, "y": 0.3256, "badge": "UTA", "tooltip": "<div class=\"name\">Cloe Lacasse</div><div class=\"row\">UTA &middot; 1769 min</div><div class=\"row\">xG/96 0.26 &middot; Goals/96 0.33 &middot; Goals 6</div>", "highlight": false, "annotation": null}, {"x": 0.358, "y": 0.2001, "badge": "NJY", "tooltip": "<div class=\"name\">Jordynn Dudley</div><div class=\"row\">NJY &middot; 1439 min</div><div class=\"row\">xG/96 0.36 &middot; Goals/96 0.20 &middot; Goals 3</div>", "highlight": false, "annotation": null}, {"x": 0.3542, "y": 0.3392, "badge": "UTA", "tooltip": "<div class=\"name\">Mina Tanaka</div><div class=\"row\">UTA &middot; 1415 min</div><div class=\"row\">xG/96 0.35 &middot; Goals/96 0.34 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.3336, "y": 0.3288, "badge": "POR", "tooltip": "<div class=\"name\">Olivia Moultrie</div><div class=\"row\">POR &middot; 1460 min</div><div class=\"row\">xG/96 0.33 &middot; Goals/96 0.33 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.1831, "y": 0.2885, "badge": "WAS", "tooltip": "<div class=\"name\">Leicy Santos</div><div class=\"row\">WAS &middot; 1664 min</div><div class=\"row\">xG/96 0.18 &middot; Goals/96 0.29 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.1709, "y": 0.1087, "badge": "NC", "tooltip": "<div class=\"name\">Riley Jackson</div><div class=\"row\">NC &middot; 1767 min</div><div class=\"row\">xG/96 0.17 &middot; Goals/96 0.11 &middot; Goals 2</div>", "highlight": false, "annotation": null}, {"x": 0.2716, "y": 0.3921, "badge": "HOU", "tooltip": "<div class=\"name\">Katherine Rader</div><div class=\"row\">HOU &middot; 1714 min</div><div class=\"row\">xG/96 0.27 &middot; Goals/96 0.39 &middot; Goals 7</div>", "highlight": false, "annotation": null}, {"x": 0.4233, "y": 0.4129, "badge": "KC", "tooltip": "<div class=\"name\">Debinha</div><div class=\"row\">KC &middot; 930 min</div><div class=\"row\">xG/96 0.42 &middot; Goals/96 0.41 &middot; Goals 4</div>", "highlight": false, "annotation": null}, {"x": 0.5023, "y": 0.4503, "badge": "BOS", "tooltip": "<div class=\"name\">Amanda Santos</div><div class=\"row\">BOS &middot; 1066 min</div><div class=\"row\">xG/96 0.50 &middot; Goals/96 0.45 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.3052, "y": 0.3849, "badge": "SD", "tooltip": "<div class=\"name\">Dudinha</div><div class=\"row\">SD &middot; 1247 min</div><div class=\"row\">xG/96 0.31 &middot; Goals/96 0.38 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.3774, "y": 0.4853, "badge": "LA", "tooltip": "<div class=\"name\">Sveind\u00eds Jane J\u00f3nsd\u00f3ttir</div><div class=\"row\">LA &middot; 1187 min</div><div class=\"row\">xG/96 0.38 &middot; Goals/96 0.49 &middot; Goals 6</div>", "highlight": false, "annotation": null}, {"x": 0.2455, "y": 0.2948, "badge": "NJY", "tooltip": "<div class=\"name\">Jaedyn Shaw</div><div class=\"row\">NJY &middot; 1628 min</div><div class=\"row\">xG/96 0.25 &middot; Goals/96 0.29 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.33, "y": 0.4068, "badge": "SD", "tooltip": "<div class=\"name\">Lia Eugenia Godfrey</div><div class=\"row\">SD &middot; 1180 min</div><div class=\"row\">xG/96 0.33 &middot; Goals/96 0.41 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.3307, "y": 0.3224, "badge": "SEA", "tooltip": "<div class=\"name\">Maddie Mercado</div><div class=\"row\">SEA &middot; 1489 min</div><div class=\"row\">xG/96 0.33 &middot; Goals/96 0.32 &middot; Goals 5</div>", "highlight": false, "annotation": null}]}, {"type": "scatter", "tabLabel": "xG vs. xA", "metricLabel": "Player xGoals vs. xAssists, per 96 minutes", "title": "Croix Bethune is the league's most balanced dual threat", "blurb": "Same player pool, shown per 96 minutes \u2014 who creates chances for themselves (right) vs. for others (up), independent of how many minutes each player has played.", "xAxisLabel": "xGoals per 96 min", "yAxisLabel": "xAssists per 96 min", "radius": 15, "showBadges": true, "data": [{"x": 0.3351, "y": 0.3206, "badge": "KC", "tooltip": "<div class=\"name\">Croix Bethune</div><div class=\"row\">KC &middot; 1691 min</div><div class=\"row\">xG/96 0.34 &middot; xA/96 0.32 &middot; Goals 3</div>", "highlight": true, "annotation": "0.34 xG/96, 0.32 xA/96"}, {"x": 0.479, "y": 0.1878, "badge": "POR", "tooltip": "<div class=\"name\">Sophia Wilson</div><div class=\"row\">POR &middot; 1636 min</div><div class=\"row\">xG/96 0.48 &middot; xA/96 0.19 &middot; Goals 9</div>", "highlight": false, "annotation": null}, {"x": 0.4449, "y": 0.1376, "badge": "WAS", "tooltip": "<div class=\"name\">Trinity Rodman</div><div class=\"row\">WAS &middot; 1774 min</div><div class=\"row\">xG/96 0.44 &middot; xA/96 0.14 &middot; Goals 9</div>", "highlight": false, "annotation": null}, {"x": 0.6505, "y": 0.1784, "badge": "ORL", "tooltip": "<div class=\"name\">Barbra Banda</div><div class=\"row\">ORL &middot; 1241 min</div><div class=\"row\">xG/96 0.65 &middot; xA/96 0.18 &middot; Goals 12</div>", "highlight": false, "annotation": null}, {"x": 0.5379, "y": 0.1041, "badge": "BOS", "tooltip": "<div class=\"name\">Aissata Traore</div><div class=\"row\">BOS &middot; 1410 min</div><div class=\"row\">xG/96 0.54 &middot; xA/96 0.10 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.6305, "y": 0.0931, "badge": "NC", "tooltip": "<div class=\"name\">Evelyn Ijeh</div><div class=\"row\">NC &middot; 1242 min</div><div class=\"row\">xG/96 0.63 &middot; xA/96 0.09 &middot; Goals 9</div>", "highlight": false, "annotation": null}, {"x": 0.2635, "y": 0.2247, "badge": "UTA", "tooltip": "<div class=\"name\">Cloe Lacasse</div><div class=\"row\">UTA &middot; 1769 min</div><div class=\"row\">xG/96 0.26 &middot; xA/96 0.22 &middot; Goals 6</div>", "highlight": false, "annotation": null}, {"x": 0.358, "y": 0.2288, "badge": "NJY", "tooltip": "<div class=\"name\">Jordynn Dudley</div><div class=\"row\">NJY &middot; 1439 min</div><div class=\"row\">xG/96 0.36 &middot; xA/96 0.23 &middot; Goals 3</div>", "highlight": false, "annotation": null}, {"x": 0.3542, "y": 0.1681, "badge": "UTA", "tooltip": "<div class=\"name\">Mina Tanaka</div><div class=\"row\">UTA &middot; 1415 min</div><div class=\"row\">xG/96 0.35 &middot; xA/96 0.17 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.3336, "y": 0.1612, "badge": "POR", "tooltip": "<div class=\"name\">Olivia Moultrie</div><div class=\"row\">POR &middot; 1460 min</div><div class=\"row\">xG/96 0.33 &middot; xA/96 0.16 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.1831, "y": 0.2218, "badge": "WAS", "tooltip": "<div class=\"name\">Leicy Santos</div><div class=\"row\">WAS &middot; 1664 min</div><div class=\"row\">xG/96 0.18 &middot; xA/96 0.22 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.1709, "y": 0.2012, "badge": "NC", "tooltip": "<div class=\"name\">Riley Jackson</div><div class=\"row\">NC &middot; 1767 min</div><div class=\"row\">xG/96 0.17 &middot; xA/96 0.20 &middot; Goals 2</div>", "highlight": false, "annotation": null}, {"x": 0.2716, "y": 0.1092, "badge": "HOU", "tooltip": "<div class=\"name\">Katherine Rader</div><div class=\"row\">HOU &middot; 1714 min</div><div class=\"row\">xG/96 0.27 &middot; xA/96 0.11 &middot; Goals 7</div>", "highlight": false, "annotation": null}, {"x": 0.4233, "y": 0.2773, "badge": "KC", "tooltip": "<div class=\"name\">Debinha</div><div class=\"row\">KC &middot; 930 min</div><div class=\"row\">xG/96 0.42 &middot; xA/96 0.28 &middot; Goals 4</div>", "highlight": false, "annotation": null}, {"x": 0.5023, "y": 0.1067, "badge": "BOS", "tooltip": "<div class=\"name\">Amanda Santos</div><div class=\"row\">BOS &middot; 1066 min</div><div class=\"row\">xG/96 0.50 &middot; xA/96 0.11 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.3052, "y": 0.2149, "badge": "SD", "tooltip": "<div class=\"name\">Dudinha</div><div class=\"row\">SD &middot; 1247 min</div><div class=\"row\">xG/96 0.31 &middot; xA/96 0.21 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.3774, "y": 0.1685, "badge": "LA", "tooltip": "<div class=\"name\">Sveind\u00eds Jane J\u00f3nsd\u00f3ttir</div><div class=\"row\">LA &middot; 1187 min</div><div class=\"row\">xG/96 0.38 &middot; xA/96 0.17 &middot; Goals 6</div>", "highlight": false, "annotation": null}, {"x": 0.2455, "y": 0.1382, "badge": "NJY", "tooltip": "<div class=\"name\">Jaedyn Shaw</div><div class=\"row\">NJY &middot; 1628 min</div><div class=\"row\">xG/96 0.25 &middot; xA/96 0.14 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.33, "y": 0.1906, "badge": "SD", "tooltip": "<div class=\"name\">Lia Eugenia Godfrey</div><div class=\"row\">SD &middot; 1180 min</div><div class=\"row\">xG/96 0.33 &middot; xA/96 0.19 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.3307, "y": 0.0723, "badge": "SEA", "tooltip": "<div class=\"name\">Maddie Mercado</div><div class=\"row\">SEA &middot; 1489 min</div><div class=\"row\">xG/96 0.33 &middot; xA/96 0.07 &middot; Goals 5</div>", "highlight": false, "annotation": null}]}, {"type": "diverging-bar", "tabLabel": "Goals Added", "metricLabel": "Goals Added (g+), all action types combined", "title": "Sophia Wilson leads the league in total on-ball contribution", "blurb": "ASA's other headline metric \u2014 possession-value contribution (dribbling + fouling + interrupting + passing + receiving + shooting) above average for the position, summed across categories. Top 15 among 500+ minute players.", "valueLabel": "Goals Added", "xAxisLabel": "Goals Added (g+)", "footnote": "\u201cAbove average\u201d is relative to other players in the same general position.", "data": [{"label": "Sophia Wilson (POR)", "value": 4.2033, "highlight": true}, {"label": "Barbra Banda (ORL)", "value": 4.0168, "highlight": false}, {"label": "Trinity Rodman (WAS)", "value": 3.2001, "highlight": false}, {"label": "Olivia Moultrie (POR)", "value": 1.734, "highlight": false}, {"label": "Racheal Kundananji (BAY)", "value": 1.6021, "highlight": false}, {"label": "Dudinha (SD)", "value": 1.4938, "highlight": false}, {"label": "Emma Sears (LOU)", "value": 1.2641, "highlight": false}, {"label": "Evelyn Ijeh (NC)", "value": 0.9339, "highlight": false}, {"label": "Gia Corley (SD)", "value": 0.8804, "highlight": false}, {"label": "Maddie Mercado (SEA)", "value": 0.8365, "highlight": false}, {"label": "Debinha (KC)", "value": 0.7636, "highlight": false}, {"label": "Aissata Traore (BOS)", "value": 0.7053, "highlight": false}, {"label": "Lia Eugenia Godfrey (SD)", "value": 0.5483, "highlight": false}, {"label": "Pietra Tordin (POR)", "value": 0.4692, "highlight": false}, {"label": "Ludmila (SD)", "value": 0.4343, "highlight": false}]}, {"type": "scatter", "tabLabel": "Goalkeepers", "metricLabel": "Shots Faced vs. Goals Saved Above Expected", "title": "Jordan Silkowitz is saving more than any other keeper in the league, despite a light workload", "blurb": "20 goalkeepers, 500+ minutes. Shots faced (right, workload) vs. goals prevented relative to the quality of shots faced (up, axis is xG on target minus goals actually conceded \u2014 positive means outperforming expectation).", "footnote": "Shots faced shown as a season total, not per-96 \u2014 this demo snapshot doesn't have individually-verified minutes for each goalkeeper. build_dashboard.py's live version shows shots faced per 96 minutes.", "xAxisLabel": "Shots faced", "yAxisLabel": "Goals saved above expected", "radius": 15, "data": [{"x": 78, "y": 7.646, "badge": "KC", "tooltip": "<div class=\"name\">Jordan Silkowitz</div><div class=\"row\">KC &middot; 78 shots faced</div><div class=\"row\">Goals saved above expected: +7.65</div>", "highlight": true, "annotation": "Jordan Silkowitz: +7.6 on just 78 shots faced"}, {"x": 91, "y": 5.203, "badge": "ORL", "tooltip": "<div class=\"name\">Claudia Dickey</div><div class=\"row\">ORL &middot; 91 shots faced</div><div class=\"row\">Goals saved above expected: +5.20</div>", "highlight": false, "annotation": null}, {"x": 84, "y": 4.812, "badge": "SD", "tooltip": "<div class=\"name\">Kailen Sheridan</div><div class=\"row\">SD &middot; 84 shots faced</div><div class=\"row\">Goals saved above expected: +4.81</div>", "highlight": false, "annotation": null}, {"x": 96, "y": 3.977, "badge": "WAS", "tooltip": "<div class=\"name\">Katie Lund</div><div class=\"row\">WAS &middot; 96 shots faced</div><div class=\"row\">Goals saved above expected: +3.98</div>", "highlight": false, "annotation": null}, {"x": 73, "y": 3.541, "badge": "POR", "tooltip": "<div class=\"name\">Cassie Miller</div><div class=\"row\">POR &middot; 73 shots faced</div><div class=\"row\">Goals saved above expected: +3.54</div>", "highlight": false, "annotation": null}, {"x": 88, "y": 3.108, "badge": "UTA", "tooltip": "<div class=\"name\">Jayme Cochran</div><div class=\"row\">UTA &middot; 88 shots faced</div><div class=\"row\">Goals saved above expected: +3.11</div>", "highlight": false, "annotation": null}, {"x": 101, "y": 2.664, "badge": "NC", "tooltip": "<div class=\"name\">Anna Moorhouse</div><div class=\"row\">NC &middot; 101 shots faced</div><div class=\"row\">Goals saved above expected: +2.66</div>", "highlight": false, "annotation": null}, {"x": 79, "y": 2.219, "badge": "BOS", "tooltip": "<div class=\"name\">Phallon Tullis-Joyce</div><div class=\"row\">BOS &middot; 79 shots faced</div><div class=\"row\">Goals saved above expected: +2.22</div>", "highlight": false, "annotation": null}, {"x": 85, "y": 1.877, "badge": "SEA", "tooltip": "<div class=\"name\">AD Franch</div><div class=\"row\">SEA &middot; 85 shots faced</div><div class=\"row\">Goals saved above expected: +1.88</div>", "highlight": false, "annotation": null}, {"x": 92, "y": 1.203, "badge": "NJY", "tooltip": "<div class=\"name\">Sam Fisher</div><div class=\"row\">NJY &middot; 92 shots faced</div><div class=\"row\">Goals saved above expected: +1.20</div>", "highlight": false, "annotation": null}, {"x": 97, "y": 0.542, "badge": "HOU", "tooltip": "<div class=\"name\">Emily Alvarado</div><div class=\"row\">HOU &middot; 97 shots faced</div><div class=\"row\">Goals saved above expected: +0.54</div>", "highlight": false, "annotation": null}, {"x": 82, "y": -0.318, "badge": "BAY", "tooltip": "<div class=\"name\">Angelina Anderson</div><div class=\"row\">BAY &middot; 82 shots faced</div><div class=\"row\">Goals saved above expected: -0.32</div>", "highlight": false, "annotation": null}, {"x": 119, "y": -1.204, "badge": "CHI", "tooltip": "<div class=\"name\">Kaylie Collins</div><div class=\"row\">CHI &middot; 119 shots faced</div><div class=\"row\">Goals saved above expected: -1.20</div>", "highlight": false, "annotation": null}, {"x": 94, "y": -1.689, "badge": "DEN", "tooltip": "<div class=\"name\">Mackenzie Chapman</div><div class=\"row\">DEN &middot; 94 shots faced</div><div class=\"row\">Goals saved above expected: -1.69</div>", "highlight": false, "annotation": null}, {"x": 90, "y": -2.033, "badge": "LOU", "tooltip": "<div class=\"name\">Katelyn Rowland</div><div class=\"row\">LOU &middot; 90 shots faced</div><div class=\"row\">Goals saved above expected: -2.03</div>", "highlight": false, "annotation": null}, {"x": 76, "y": -2.417, "badge": "LA", "tooltip": "<div class=\"name\">Didi Haracic</div><div class=\"row\">LA &middot; 76 shots faced</div><div class=\"row\">Goals saved above expected: -2.42</div>", "highlight": false, "annotation": null}, {"x": 41, "y": -2.902, "badge": "CHI", "tooltip": "<div class=\"name\">Justine Vanhaevermaet</div><div class=\"row\">CHI &middot; 41 shots faced</div><div class=\"row\">Goals saved above expected: -2.90</div>", "highlight": false, "annotation": null}, {"x": 33, "y": -3.114, "badge": "DEN", "tooltip": "<div class=\"name\">Bella Kearney</div><div class=\"row\">DEN &middot; 33 shots faced</div><div class=\"row\">Goals saved above expected: -3.11</div>", "highlight": false, "annotation": null}, {"x": 29, "y": -3.588, "badge": "LA", "tooltip": "<div class=\"name\">Cyera Hintzen</div><div class=\"row\">LA &middot; 29 shots faced</div><div class=\"row\">Goals saved above expected: -3.59</div>", "highlight": false, "annotation": null}, {"x": 25, "y": -4.021, "badge": "HOU", "tooltip": "<div class=\"name\">Freya Gregory</div><div class=\"row\">HOU &middot; 25 shots faced</div><div class=\"row\">Goals saved above expected: -4.02</div>", "highlight": false, "annotation": null}]}, {"type": "team-compare", "tabLabel": "Compare Teammates", "metricLabel": "Team Roster Comparison", "title": "Compare any two teammates head-to-head", "blurb": "Pick a team to see how its players stack up on a given metric. All 16 teams, 2+ players each.", "footnote": "xGoals, xAssists, Goals, and Shots shown per 96 minutes. Goals Added shown as 0.00 for players outside this demo's top-15 GA leaderboard, not a true zero.", "teamNames": {"DEN": "Denver Summit FC", "BAY": "Bay FC", "HOU": "Houston Dash", "KC": "Kansas City Current", "SD": "San Diego Wave FC", "SEA": "Seattle Reign FC", "CHI": "Chicago Stars FC", "POR": "Portland Thorns FC", "ORL": "Orlando Pride", "WAS": "Washington Spirit", "UTA": "Utah Royals FC", "LOU": "Racing Louisville FC", "LA": "Angel City FC", "BOS": "Boston Legacy FC", "NJY": "NJ/NY Gotham FC", "NC": "North Carolina Courage"}, "rosters": {"KC": [{"name": "Croix Bethune", "minutes": 1691, "xg96": 0.3351, "xa96": 0.3206, "goals96": 0.1703, "shots96": 2.3276, "ga": 0.0}, {"name": "Debinha", "minutes": 930, "xg96": 0.4233, "xa96": 0.2773, "goals96": 0.4129, "shots96": 2.4774, "ga": 0.764}], "POR": [{"name": "Sophia Wilson", "minutes": 1636, "xg96": 0.479, "xa96": 0.1878, "goals96": 0.5281, "shots96": 4.6944, "ga": 4.203}, {"name": "Olivia Moultrie", "minutes": 1460, "xg96": 0.3336, "xa96": 0.1612, "goals96": 0.3288, "shots96": 2.4329, "ga": 1.734}], "WAS": [{"name": "Trinity Rodman", "minutes": 1774, "xg96": 0.4449, "xa96": 0.1376, "goals96": 0.487, "shots96": 3.4634, "ga": 3.2}, {"name": "Leicy Santos", "minutes": 1664, "xg96": 0.1831, "xa96": 0.2218, "goals96": 0.2885, "shots96": 2.0192, "ga": 0.0}], "ORL": [{"name": "Ally Lemos", "minutes": 1656, "xg96": 0.1003, "xa96": 0.1193, "goals96": 0.0, "shots96": 1.2754, "ga": 0.0}, {"name": "Barbra Banda", "minutes": 1241, "xg96": 0.6505, "xa96": 0.1784, "goals96": 0.9283, "shots96": 4.6414, "ga": 4.017}], "BOS": [{"name": "Aissata Traore", "minutes": 1410, "xg96": 0.5379, "xa96": 0.1041, "goals96": 0.3404, "shots96": 3.2, "ga": 0.705}, {"name": "Amanda Santos", "minutes": 1066, "xg96": 0.5023, "xa96": 0.1067, "goals96": 0.4503, "shots96": 3.152, "ga": 0.0}], "NC": [{"name": "Riley Jackson", "minutes": 1767, "xg96": 0.1709, "xa96": 0.2012, "goals96": 0.1087, "shots96": 1.4669, "ga": 0.0}, {"name": "Evelyn Ijeh", "minutes": 1242, "xg96": 0.6305, "xa96": 0.0931, "goals96": 0.6957, "shots96": 2.5507, "ga": 0.934}], "UTA": [{"name": "Cloe Lacasse", "minutes": 1769, "xg96": 0.2635, "xa96": 0.2247, "goals96": 0.3256, "shots96": 1.8451, "ga": 0.0}, {"name": "Mina Tanaka", "minutes": 1415, "xg96": 0.3542, "xa96": 0.1681, "goals96": 0.3392, "shots96": 2.6459, "ga": 0.0}], "NJY": [{"name": "Jaedyn Shaw", "minutes": 1628, "xg96": 0.2455, "xa96": 0.1382, "goals96": 0.2948, "shots96": 2.4177, "ga": 0.0}, {"name": "Jordynn Dudley", "minutes": 1439, "xg96": 0.358, "xa96": 0.2288, "goals96": 0.2001, "shots96": 2.7352, "ga": 0.0}], "HOU": [{"name": "Katherine Rader", "minutes": 1714, "xg96": 0.2716, "xa96": 0.1092, "goals96": 0.3921, "shots96": 2.0163, "ga": 0.0}, {"name": "Kiki Van Zanten", "minutes": 937, "xg96": 0.2661, "xa96": 0.1589, "goals96": 0.4098, "shots96": 2.5614, "ga": 0.0}], "SD": [{"name": "Dudinha", "minutes": 1247, "xg96": 0.3052, "xa96": 0.2149, "goals96": 0.3849, "shots96": 2.7715, "ga": 1.494}, {"name": "Lia Eugenia Godfrey", "minutes": 1180, "xg96": 0.33, "xa96": 0.1906, "goals96": 0.4068, "shots96": 1.9525, "ga": 0.548}], "LA": [{"name": "Ary Borges", "minutes": 1577, "xg96": 0.1227, "xa96": 0.0528, "goals96": 0.1218, "shots96": 1.4001, "ga": 0.0}, {"name": "Sveind\u00eds Jane J\u00f3nsd\u00f3ttir", "minutes": 1187, "xg96": 0.3774, "xa96": 0.1685, "goals96": 0.4853, "shots96": 2.1028, "ga": 0.0}], "SEA": [{"name": "Maddie Mercado", "minutes": 1489, "xg96": 0.3307, "xa96": 0.0723, "goals96": 0.3224, "shots96": 2.7079, "ga": 0.837}, {"name": "Madeline Dahlien", "minutes": 1241, "xg96": 0.2753, "xa96": 0.1907, "goals96": 0.1547, "shots96": 2.0886, "ga": 0.0}], "DEN": [{"name": "Yazmeen Ryan", "minutes": 1690, "xg96": 0.2197, "xa96": 0.2391, "goals96": 0.2272, "shots96": 2.2154, "ga": 0.0}, {"name": "Melissa Kossler", "minutes": 1281, "xg96": 0.3187, "xa96": 0.148, "goals96": 0.2998, "shots96": 2.3232, "ga": 0.0}], "BAY": [{"name": "Claire Hutton", "minutes": 1832, "xg96": 0.1306, "xa96": 0.0606, "goals96": 0.0524, "shots96": 1.1004, "ga": 0.0}, {"name": "Karlie Lema", "minutes": 1181, "xg96": 0.3828, "xa96": 0.022, "goals96": 0.3251, "shots96": 2.845, "ga": 0.0}], "CHI": [{"name": "Jordyn Huitema", "minutes": 1059, "xg96": 0.3207, "xa96": 0.0697, "goals96": 0.3626, "shots96": 1.2691, "ga": 0.0}, {"name": "Ryan Gareis", "minutes": 1032, "xg96": 0.0918, "xa96": 0.1914, "goals96": 0.0, "shots96": 1.2093, "ga": 0.0}], "LOU": [{"name": "Katie O'Kane", "minutes": 1703, "xg96": 0.1308, "xa96": 0.1351, "goals96": 0.1127, "shots96": 1.6911, "ga": 0.0}, {"name": "Emma Sears", "minutes": 1453, "xg96": 0.2121, "xa96": 0.1526, "goals96": 0.2643, "shots96": 1.916, "ga": 1.264}]}, "stats": [{"key": "ga", "label": "Goals Added (g+)"}, {"key": "xg96", "label": "xGoals per 96"}, {"key": "xa96", "label": "xAssists per 96"}, {"key": "goals96", "label": "Goals per 96"}, {"key": "shots96", "label": "Shots per 96"}, {"key": "minutes", "label": "Minutes"}]}];
+const CHARTS = [{"type": "scatter", "tabLabel": "League Picture", "metricLabel": "Team xGF vs. xGA", "title": "San Diego Wave FC is the strongest team on both sides of the ball", "blurb": "xG For (right) vs. xG Against (up, axis inverted so up-right is always the strong quadrant). Dashed lines mark the league median. Team totals for the season, not a per-96 rate.", "xAxisLabel": "xG For (attacking output)", "yAxisLabel": "xG Against (defensive output)", "invertY": true, "medianLines": true, "radius": 15, "data": [{"x": 25.3197, "y": 28.3586, "badge": "DEN", "tooltip": "<div class=\"name\">Denver Summit FC</div><div class=\"row\">xGF 25.3 &middot; xGA 28.4</div>", "highlight": false, "annotation": null}, {"x": 21.4773, "y": 28.7563, "badge": "BAY", "tooltip": "<div class=\"name\">Bay FC</div><div class=\"row\">xGF 21.5 &middot; xGA 28.8</div>", "highlight": false, "annotation": null}, {"x": 21.5574, "y": 34.1282, "badge": "HOU", "tooltip": "<div class=\"name\">Houston Dash</div><div class=\"row\">xGF 21.6 &middot; xGA 34.1</div>", "highlight": false, "annotation": null}, {"x": 34.3005, "y": 24.5646, "badge": "KC", "tooltip": "<div class=\"name\">Kansas City Current</div><div class=\"row\">xGF 34.3 &middot; xGA 24.6</div>", "highlight": false, "annotation": null}, {"x": 31.7159, "y": 16.9189, "badge": "SD", "tooltip": "<div class=\"name\">San Diego Wave FC</div><div class=\"row\">xGF 31.7 &middot; xGA 16.9</div>", "highlight": true, "annotation": "SD: rank #3 attack, #1 defense"}, {"x": 21.3125, "y": 25.108, "badge": "SEA", "tooltip": "<div class=\"name\">Seattle Reign FC</div><div class=\"row\">xGF 21.3 &middot; xGA 25.1</div>", "highlight": false, "annotation": null}, {"x": 13.4942, "y": 40.0946, "badge": "CHI", "tooltip": "<div class=\"name\">Chicago Stars FC</div><div class=\"row\">xGF 13.5 &middot; xGA 40.1</div>", "highlight": false, "annotation": null}, {"x": 26.5152, "y": 28.778, "badge": "POR", "tooltip": "<div class=\"name\">Portland Thorns FC</div><div class=\"row\">xGF 26.5 &middot; xGA 28.8</div>", "highlight": false, "annotation": null}, {"x": 27.1798, "y": 25.2215, "badge": "ORL", "tooltip": "<div class=\"name\">Orlando Pride</div><div class=\"row\">xGF 27.2 &middot; xGA 25.2</div>", "highlight": false, "annotation": null}, {"x": 28.1564, "y": 21.0729, "badge": "WAS", "tooltip": "<div class=\"name\">Washington Spirit</div><div class=\"row\">xGF 28.2 &middot; xGA 21.1</div>", "highlight": false, "annotation": null}, {"x": 30.8618, "y": 25.1192, "badge": "UTA", "tooltip": "<div class=\"name\">Utah Royals FC</div><div class=\"row\">xGF 30.9 &middot; xGA 25.1</div>", "highlight": false, "annotation": null}, {"x": 24.4953, "y": 32.8946, "badge": "LOU", "tooltip": "<div class=\"name\">Racing Louisville FC</div><div class=\"row\">xGF 24.5 &middot; xGA 32.9</div>", "highlight": false, "annotation": null}, {"x": 26.0357, "y": 21.7489, "badge": "LA", "tooltip": "<div class=\"name\">Angel City FC</div><div class=\"row\">xGF 26.0 &middot; xGA 21.7</div>", "highlight": false, "annotation": null}, {"x": 25.9613, "y": 26.0956, "badge": "BOS", "tooltip": "<div class=\"name\">Boston Legacy FC</div><div class=\"row\">xGF 26.0 &middot; xGA 26.1</div>", "highlight": false, "annotation": null}, {"x": 30.509, "y": 20.5859, "badge": "NJY", "tooltip": "<div class=\"name\">NJ/NY Gotham FC</div><div class=\"row\">xGF 30.5 &middot; xGA 20.6</div>", "highlight": false, "annotation": null}, {"x": 33.5379, "y": 22.9842, "badge": "NC", "tooltip": "<div class=\"name\">North Carolina Courage</div><div class=\"row\">xGF 33.5 &middot; xGA 23.0</div>", "highlight": false, "annotation": null}]}, {"type": "diverging-bar", "tabLabel": "Team xG Diff.", "metricLabel": "Team xG Differential (xGF - xGA)", "title": "Chicago Stars FC is being outchanced by 27 expected goals \u2014 the widest gap in the league", "blurb": "xG For minus xG Against, all teams, season through today.", "valueLabel": "xG differential", "xAxisLabel": "xG differential (xGF - xGA)", "data": [{"label": "DEN", "value": -3.038899999999998, "highlight": false}, {"label": "BAY", "value": -7.279, "highlight": false}, {"label": "HOU", "value": -12.570799999999998, "highlight": false}, {"label": "KC", "value": 9.7359, "highlight": false}, {"label": "SD", "value": 14.797, "highlight": false}, {"label": "SEA", "value": -3.7955000000000005, "highlight": false}, {"label": "CHI", "value": -26.6004, "highlight": true}, {"label": "POR", "value": -2.2627999999999986, "highlight": false}, {"label": "ORL", "value": 1.9583000000000013, "highlight": false}, {"label": "WAS", "value": 7.083500000000001, "highlight": false}, {"label": "UTA", "value": 5.7425999999999995, "highlight": false}, {"label": "LOU", "value": -8.399299999999997, "highlight": false}, {"label": "LA", "value": 4.2867999999999995, "highlight": false}, {"label": "BOS", "value": -0.13429999999999964, "highlight": false}, {"label": "NJY", "value": 9.923100000000002, "highlight": false}, {"label": "NC", "value": 10.5537, "highlight": false}], "footnote": "Season in progress \u2014 teams have played 17-20 games each."}, {"type": "diverging-bar", "tabLabel": "Team Goals Added", "metricLabel": "Team Goals Added (g+), net of value conceded", "title": "Chicago Stars FC's on-ball play is the league's single biggest goals-added liability, 22.9 g+ worse than a league-average team", "blurb": "Goals Added (g+) summed across every action type \u2014 value the team's own players created, minus value opposing players created against them. A single on-ball-quality number, independent of the shot-based xG charts.", "valueLabel": "Net Goals Added", "xAxisLabel": "Net Goals Added (g+)", "footnote": "Positive = the team created more on-ball value than it conceded, relative to a league-average team; negative = the reverse. Season totals, not per-96 \u2014 like Team xG Diff., a team doesn't have a \"minutes played\" denominator the way a player does.", "data": [{"label": "DEN", "value": -4.74, "highlight": false, "extra": "Created 25.8 g+ &middot; Conceded 30.6 g+"}, {"label": "BAY", "value": -10.35, "highlight": false, "extra": "Created 21.8 g+ &middot; Conceded 32.1 g+"}, {"label": "HOU", "value": -7.51, "highlight": false, "extra": "Created 25.2 g+ &middot; Conceded 32.7 g+"}, {"label": "KC", "value": 9.56, "highlight": false, "extra": "Created 36.4 g+ &middot; Conceded 26.9 g+"}, {"label": "SD", "value": 6.51, "highlight": false, "extra": "Created 30.0 g+ &middot; Conceded 23.5 g+"}, {"label": "SEA", "value": 2.05, "highlight": false, "extra": "Created 27.0 g+ &middot; Conceded 25.0 g+"}, {"label": "CHI", "value": -22.9, "highlight": true, "extra": "Created 18.2 g+ &middot; Conceded 41.1 g+"}, {"label": "POR", "value": 0.29, "highlight": false, "extra": "Created 30.8 g+ &middot; Conceded 30.5 g+"}, {"label": "ORL", "value": 1.02, "highlight": false, "extra": "Created 30.3 g+ &middot; Conceded 29.3 g+"}, {"label": "WAS", "value": 7.12, "highlight": false, "extra": "Created 31.7 g+ &middot; Conceded 24.5 g+"}, {"label": "UTA", "value": 4.38, "highlight": false, "extra": "Created 32.5 g+ &middot; Conceded 28.1 g+"}, {"label": "LOU", "value": -4.67, "highlight": false, "extra": "Created 30.1 g+ &middot; Conceded 34.8 g+"}, {"label": "LA", "value": 2.19, "highlight": false, "extra": "Created 27.2 g+ &middot; Conceded 25.0 g+"}, {"label": "BOS", "value": 5.46, "highlight": false, "extra": "Created 29.4 g+ &middot; Conceded 23.9 g+"}, {"label": "NJY", "value": 5.1, "highlight": false, "extra": "Created 31.8 g+ &middot; Conceded 26.7 g+"}, {"label": "NC", "value": 6.5, "highlight": false, "extra": "Created 34.1 g+ &middot; Conceded 27.6 g+"}]}, {"type": "scatter", "tabLabel": "Shot Quality", "metricLabel": "Shots Taken vs. xG per Shot, per 96 minutes", "title": "Evelyn Ijeh gets more out of every shot than anyone else in the league", "blurb": "Same player pool (min. 10 shots, 20 qualify) \u2014 shot volume per 96 minutes (right) vs. average shot quality, xG per shot (up), so players with different minutes played are compared fairly. Low-and-right = high volume, low quality; up-and-left = fewer, better shots.", "xAxisLabel": "Shots per 96 min", "yAxisLabel": "xG per shot", "radius": 15, "showBadges": true, "footnote": "Penalties are INCLUDED here (demo snapshot, no shot-pattern split available) \u2014 a designated penalty taker's average shot quality is inflated by roughly 0.75 xG per penalty.", "data": [{"x": 2.3276, "y": 0.144, "badge": "KC", "tooltip": "<div class=\"name\">Croix Bethune</div><div class=\"row\">KC &middot; 41 shots (2.3/96)</div><div class=\"row\">xG 5.90 &middot; xG/shot 0.144</div>", "highlight": false, "annotation": null}, {"x": 4.6944, "y": 0.102, "badge": "POR", "tooltip": "<div class=\"name\">Sophia Wilson</div><div class=\"row\">POR &middot; 80 shots (4.7/96)</div><div class=\"row\">xG 8.16 &middot; xG/shot 0.102</div>", "highlight": false, "annotation": null}, {"x": 3.4634, "y": 0.1285, "badge": "WAS", "tooltip": "<div class=\"name\">Trinity Rodman</div><div class=\"row\">WAS &middot; 64 shots (3.5/96)</div><div class=\"row\">xG 8.22 &middot; xG/shot 0.128</div>", "highlight": false, "annotation": null}, {"x": 4.6414, "y": 0.1402, "badge": "ORL", "tooltip": "<div class=\"name\">Barbra Banda</div><div class=\"row\">ORL &middot; 60 shots (4.6/96)</div><div class=\"row\">xG 8.41 &middot; xG/shot 0.140</div>", "highlight": false, "annotation": null}, {"x": 3.2, "y": 0.1681, "badge": "BOS", "tooltip": "<div class=\"name\">Aissata Traore</div><div class=\"row\">BOS &middot; 47 shots (3.2/96)</div><div class=\"row\">xG 7.90 &middot; xG/shot 0.168</div>", "highlight": false, "annotation": null}, {"x": 2.5507, "y": 0.2472, "badge": "NC", "tooltip": "<div class=\"name\">Evelyn Ijeh</div><div class=\"row\">NC &middot; 33 shots (2.6/96)</div><div class=\"row\">xG 8.16 &middot; xG/shot 0.247</div>", "highlight": true, "annotation": "Ijeh: 0.25 xG/shot on 2.6 shots/96"}, {"x": 1.8451, "y": 0.1428, "badge": "UTA", "tooltip": "<div class=\"name\">Cloe Lacasse</div><div class=\"row\">UTA &middot; 34 shots (1.8/96)</div><div class=\"row\">xG 4.86 &middot; xG/shot 0.143</div>", "highlight": false, "annotation": null}, {"x": 2.7352, "y": 0.1309, "badge": "NJY", "tooltip": "<div class=\"name\">Jordynn Dudley</div><div class=\"row\">NJY &middot; 41 shots (2.7/96)</div><div class=\"row\">xG 5.37 &middot; xG/shot 0.131</div>", "highlight": false, "annotation": null}, {"x": 2.6459, "y": 0.1339, "badge": "UTA", "tooltip": "<div class=\"name\">Mina Tanaka</div><div class=\"row\">UTA &middot; 39 shots (2.6/96)</div><div class=\"row\">xG 5.22 &middot; xG/shot 0.134</div>", "highlight": false, "annotation": null}, {"x": 2.4329, "y": 0.1371, "badge": "POR", "tooltip": "<div class=\"name\">Olivia Moultrie</div><div class=\"row\">POR &middot; 37 shots (2.4/96)</div><div class=\"row\">xG 5.07 &middot; xG/shot 0.137</div>", "highlight": false, "annotation": null}, {"x": 2.0192, "y": 0.0907, "badge": "WAS", "tooltip": "<div class=\"name\">Leicy Santos</div><div class=\"row\">WAS &middot; 35 shots (2.0/96)</div><div class=\"row\">xG 3.17 &middot; xG/shot 0.091</div>", "highlight": false, "annotation": null}, {"x": 1.4669, "y": 0.1165, "badge": "NC", "tooltip": "<div class=\"name\">Riley Jackson</div><div class=\"row\">NC &middot; 27 shots (1.5/96)</div><div class=\"row\">xG 3.15 &middot; xG/shot 0.117</div>", "highlight": false, "annotation": null}, {"x": 2.0163, "y": 0.1347, "badge": "HOU", "tooltip": "<div class=\"name\">Katherine Rader</div><div class=\"row\">HOU &middot; 36 shots (2.0/96)</div><div class=\"row\">xG 4.85 &middot; xG/shot 0.135</div>", "highlight": false, "annotation": null}, {"x": 2.4774, "y": 0.1709, "badge": "KC", "tooltip": "<div class=\"name\">Debinha</div><div class=\"row\">KC &middot; 24 shots (2.5/96)</div><div class=\"row\">xG 4.10 &middot; xG/shot 0.171</div>", "highlight": false, "annotation": null}, {"x": 3.152, "y": 0.1594, "badge": "BOS", "tooltip": "<div class=\"name\">Amanda Santos</div><div class=\"row\">BOS &middot; 35 shots (3.2/96)</div><div class=\"row\">xG 5.58 &middot; xG/shot 0.159</div>", "highlight": false, "annotation": null}, {"x": 2.7715, "y": 0.1101, "badge": "SD", "tooltip": "<div class=\"name\">Dudinha</div><div class=\"row\">SD &middot; 36 shots (2.8/96)</div><div class=\"row\">xG 3.96 &middot; xG/shot 0.110</div>", "highlight": false, "annotation": null}, {"x": 2.1028, "y": 0.1795, "badge": "LA", "tooltip": "<div class=\"name\">Sveind\u00eds Jane J\u00f3nsd\u00f3ttir</div><div class=\"row\">LA &middot; 26 shots (2.1/96)</div><div class=\"row\">xG 4.67 &middot; xG/shot 0.179</div>", "highlight": false, "annotation": null}, {"x": 2.4177, "y": 0.1016, "badge": "NJY", "tooltip": "<div class=\"name\">Jaedyn Shaw</div><div class=\"row\">NJY &middot; 41 shots (2.4/96)</div><div class=\"row\">xG 4.16 &middot; xG/shot 0.102</div>", "highlight": false, "annotation": null}, {"x": 1.9525, "y": 0.169, "badge": "SD", "tooltip": "<div class=\"name\">Lia Eugenia Godfrey</div><div class=\"row\">SD &middot; 24 shots (2.0/96)</div><div class=\"row\">xG 4.06 &middot; xG/shot 0.169</div>", "highlight": false, "annotation": null}, {"x": 2.7079, "y": 0.1221, "badge": "SEA", "tooltip": "<div class=\"name\">Maddie Mercado</div><div class=\"row\">SEA &middot; 42 shots (2.7/96)</div><div class=\"row\">xG 5.13 &middot; xG/shot 0.122</div>", "highlight": false, "annotation": null}]}, {"type": "scatter", "tabLabel": "Playmaking Style", "metricLabel": "Goals Added: Dribbling vs. Passing, per 96 minutes", "title": "Emma Sears creates almost entirely through passing, not dribbling", "blurb": "The 15 Goals Added leaders, split into two of the metric's six action categories \u2014 value created by beating defenders on the dribble (right) vs. value created by passing (up), shown per 96 minutes so players with different minutes played are compared fairly.", "xAxisLabel": "Dribbling g+ per 96 min", "yAxisLabel": "Passing g+ per 96 min", "radius": 15, "data": [{"x": 0.0359, "y": 0.0695, "badge": "POR", "tooltip": "<div class=\"name\">Sophia Wilson</div><div class=\"row\">POR &middot; 1636 min</div><div class=\"row\">Dribbling +0.61 g+ (+0.036/96) &middot; Passing +1.18 g+ (+0.069/96)</div>", "highlight": false, "annotation": null}, {"x": 0.1429, "y": 0.0157, "badge": "ORL", "tooltip": "<div class=\"name\">Barbra Banda</div><div class=\"row\">ORL &middot; 1241 min</div><div class=\"row\">Dribbling +1.85 g+ (+0.143/96) &middot; Passing +0.20 g+ (+0.016/96)</div>", "highlight": false, "annotation": null}, {"x": 0.0764, "y": 0.0317, "badge": "WAS", "tooltip": "<div class=\"name\">Trinity Rodman</div><div class=\"row\">WAS &middot; 1774 min</div><div class=\"row\">Dribbling +1.41 g+ (+0.076/96) &middot; Passing +0.59 g+ (+0.032/96)</div>", "highlight": false, "annotation": null}, {"x": 0.022, "y": 0.0474, "badge": "POR", "tooltip": "<div class=\"name\">Olivia Moultrie</div><div class=\"row\">POR &middot; 1460 min</div><div class=\"row\">Dribbling +0.33 g+ (+0.022/96) &middot; Passing +0.72 g+ (+0.047/96)</div>", "highlight": false, "annotation": null}, {"x": 0.0992, "y": 0.0223, "badge": "BAY", "tooltip": "<div class=\"name\">Racheal Kundananji</div><div class=\"row\">BAY &middot; 853 min</div><div class=\"row\">Dribbling +0.88 g+ (+0.099/96) &middot; Passing +0.20 g+ (+0.022/96)</div>", "highlight": false, "annotation": null}, {"x": 0.0212, "y": 0.0394, "badge": "SD", "tooltip": "<div class=\"name\">Dudinha</div><div class=\"row\">SD &middot; 1247 min</div><div class=\"row\">Dribbling +0.28 g+ (+0.021/96) &middot; Passing +0.51 g+ (+0.039/96)</div>", "highlight": false, "annotation": null}, {"x": 0.0134, "y": 0.0692, "badge": "LOU", "tooltip": "<div class=\"name\">Emma Sears</div><div class=\"row\">LOU &middot; 1453 min</div><div class=\"row\">Dribbling +0.20 g+ (+0.013/96) &middot; Passing +1.05 g+ (+0.069/96)</div>", "highlight": true, "annotation": "Sears: +0.069 g+/96 passing vs. +0.013 g+/96 dribbling"}, {"x": 0.038, "y": 0.0145, "badge": "NC", "tooltip": "<div class=\"name\">Evelyn Ijeh</div><div class=\"row\">NC &middot; 1242 min</div><div class=\"row\">Dribbling +0.49 g+ (+0.038/96) &middot; Passing +0.19 g+ (+0.014/96)</div>", "highlight": false, "annotation": null}, {"x": 0.0554, "y": 0.0216, "badge": "SD", "tooltip": "<div class=\"name\">Gia Corley</div><div class=\"row\">SD &middot; 1071 min</div><div class=\"row\">Dribbling +0.62 g+ (+0.055/96) &middot; Passing +0.24 g+ (+0.022/96)</div>", "highlight": false, "annotation": null}, {"x": 0.0101, "y": 0.0315, "badge": "SEA", "tooltip": "<div class=\"name\">Maddie Mercado</div><div class=\"row\">SEA &middot; 1489 min</div><div class=\"row\">Dribbling +0.16 g+ (+0.010/96) &middot; Passing +0.49 g+ (+0.032/96)</div>", "highlight": false, "annotation": null}, {"x": 0.0252, "y": 0.0574, "badge": "KC", "tooltip": "<div class=\"name\">Debinha</div><div class=\"row\">KC &middot; 930 min</div><div class=\"row\">Dribbling +0.24 g+ (+0.025/96) &middot; Passing +0.56 g+ (+0.057/96)</div>", "highlight": false, "annotation": null}, {"x": 0.0265, "y": 0.0203, "badge": "BOS", "tooltip": "<div class=\"name\">Aissata Traore</div><div class=\"row\">BOS &middot; 1410 min</div><div class=\"row\">Dribbling +0.39 g+ (+0.026/96) &middot; Passing +0.30 g+ (+0.020/96)</div>", "highlight": false, "annotation": null}, {"x": 0.018, "y": 0.0272, "badge": "SD", "tooltip": "<div class=\"name\">Lia Eugenia Godfrey</div><div class=\"row\">SD &middot; 1180 min</div><div class=\"row\">Dribbling +0.22 g+ (+0.018/96) &middot; Passing +0.33 g+ (+0.027/96)</div>", "highlight": false, "annotation": null}, {"x": 0.006, "y": 0.0245, "badge": "POR", "tooltip": "<div class=\"name\">Pietra Tordin</div><div class=\"row\">POR &middot; 1574 min</div><div class=\"row\">Dribbling +0.10 g+ (+0.006/96) &middot; Passing +0.40 g+ (+0.025/96)</div>", "highlight": false, "annotation": null}, {"x": 0.0216, "y": 0.0089, "badge": "SD", "tooltip": "<div class=\"name\">Ludmila</div><div class=\"row\">SD &middot; 1389 min</div><div class=\"row\">Dribbling +0.31 g+ (+0.022/96) &middot; Passing +0.13 g+ (+0.009/96)</div>", "highlight": false, "annotation": null}]}, {"type": "scatter", "tabLabel": "Goals vs. xG", "metricLabel": "Player Goals vs. xG, season totals, with the chance band", "title": "None of these 20 players is finishing distinguishably better than their chances \u2014 the spread is what chance alone produces", "blurb": "Top 20 players by combined xG+xA, 500+ minutes played, as season totals rather than per-96 rates \u2014 for this one chart, volume is the point: how far a player can credibly sit from the line depends on how many shots they have taken. The shaded ribbon is where a perfectly average finisher lands 95% of the time by chance alone, so inside it, over- or under-performance is not distinguishable from luck. Above the line = scoring more than the chances \u201cdeserved\u201d; below = fewer. Hover any point for its own exact margin; the table below carries the regressed estimate.", "xAxisLabel": "xG (season total)", "yAxisLabel": "Goals (season total)", "refLine": true, "zeroOrigin": true, "radius": 15, "showBadges": true, "band": {"points": [[0.0, 0.0, 0.0], [0.17519, -0.58739, 0.93776], [0.35037, -0.72807, 1.42882], [0.52556, -0.79525, 1.84638], [0.70075, -0.8244, 2.2259], [0.87594, -0.82923, 2.5811], [1.05113, -0.81679, 2.91904], [1.22631, -0.79127, 3.24389], [1.4015, -0.75538, 3.55838], [1.57669, -0.71103, 3.86441], [1.75188, -0.65959, 4.16334], [1.92706, -0.60211, 4.45623], [2.10225, -0.53938, 4.74388], [2.27744, -0.47206, 5.02693], [2.45263, -0.40066, 5.30591], [2.62781, -0.32562, 5.58124], [2.803, -0.24729, 5.85329], [2.97819, -0.16598, 6.12236], [3.15338, -0.08195, 6.3887], [3.32856, 0.00458, 6.65254], [3.50375, 0.09342, 6.91408], [3.67894, 0.18439, 7.17349], [3.85413, 0.27734, 7.43091], [4.02931, 0.37214, 7.68648], [4.2045, 0.46867, 7.94033], [4.37969, 0.56682, 8.19255], [4.55488, 0.6665, 8.44325], [4.73006, 0.76762, 8.69251], [4.90525, 0.87009, 8.94041], [5.08044, 0.97386, 9.18702], [5.25563, 1.07884, 9.43241], [5.43081, 1.18499, 9.67664], [5.606, 1.29224, 9.91976], [5.78119, 1.40054, 10.16183], [5.95638, 1.50985, 10.4029], [6.13156, 1.62012, 10.643], [6.30675, 1.73131, 10.88219], [6.48194, 1.84339, 11.12049], [6.65713, 1.95631, 11.35794], [6.83231, 2.07005, 11.59458], [7.0075, 2.18457, 11.83043], [7.18269, 2.29984, 12.06554], [7.35788, 2.41584, 12.29991], [7.53306, 2.53254, 12.53359], [7.70825, 2.64991, 12.76659], [7.88344, 2.76794, 12.99893], [8.05863, 2.8866, 13.23065], [8.23381, 3.00588, 13.46175], [8.409, 3.12574, 13.69226]], "label": "95% chance band"}, "meta": {"signal": {"n_players": 20, "tau2": 0.0, "qbar": 0.1372755610972569, "total_shots": 802, "half_weight_shots": null, "median_minutes": 1449.5, "median_shot_quality": 0.1359012762762763}, "pensExcluded": false, "minimumMinutes": "500+ minutes played"}, "footnote": "Penalties are INCLUDED in these numbers \u2014 this is the demo snapshot, which has no shot-pattern split. Season totals here, not per-96 as elsewhere on this dashboard: the band's width comes from shots taken, so plotting rates would hide the one thing that determines whether a gap means anything. The ribbon is drawn at this pool's median shot quality (0.136 xG/shot) and is accurate for every player to the extent their own shot quality matches that; the exact per-player interval is in the tooltip and the \u201c\u00b1 chance\u201d column. Chance intervals assume every shot is independent with the player's average shot quality, which slightly overstates the noise \u2014 the band errs wide on purpose. The estimated population variance in true finishing skill came out at zero for this pool: the spread you see is fully accounted for by the randomness of 802 shots. Every regressed value is therefore exactly 0.0, which is the honest estimate, not a bug. That is the normal result for a partial season and it is why the band is here.", "table": {"caption": "Every qualifying player, sorted by raw xG margin. \u201c\u00b1 chance\u201d is the 95% margin for that player's own shot count; \u201cz\u201d is how many chance-standard-deviations they sit from the line (|z| under 2 is not distinguishable from average); \u201cregressed\u201d is the estimate after accounting for how much of the gap the shot volume can actually support.", "columns": [{"key": "player", "label": "Player", "align": "left"}, {"key": "team", "label": "Team", "align": "left"}, {"key": "shots", "label": "Shots", "num": true}, {"key": "xg", "label": "xG", "num": true}, {"key": "goals", "label": "Goals", "num": true}, {"key": "diff", "label": "G\u2212xG", "num": true}, {"key": "band", "label": "\u00b1 chance", "num": true}, {"key": "z", "label": "z", "num": true}, {"key": "regressed", "label": "Regressed", "num": true}], "rows": [{"player": "Barbra Banda", "team": "ORL", "shots": 60, "xg": 8.41, "goals": 12, "diff": 3.59, "band": 5.27, "z": 1.34, "regressed": 0.0}, {"player": "Katherine Rader", "team": "HOU", "shots": 36, "xg": 4.85, "goals": 7, "diff": 2.15, "band": 4.01, "z": 1.05, "regressed": 0.0}, {"player": "Leicy Santos", "team": "WAS", "shots": 35, "xg": 3.17, "goals": 5, "diff": 1.83, "band": 3.33, "z": 1.08, "regressed": 0.0}, {"player": "Sveind\u00eds Jane J\u00f3nsd\u00f3ttir", "team": "LA", "shots": 26, "xg": 4.67, "goals": 6, "diff": 1.33, "band": 3.84, "z": 0.68, "regressed": 0.0}, {"player": "Cloe Lacasse", "team": "UTA", "shots": 34, "xg": 4.86, "goals": 6, "diff": 1.14, "band": 4.0, "z": 0.56, "regressed": 0.0}, {"player": "Dudinha", "team": "SD", "shots": 36, "xg": 3.96, "goals": 5, "diff": 1.04, "band": 3.68, "z": 0.55, "regressed": 0.0}, {"player": "Lia Eugenia Godfrey", "team": "SD", "shots": 24, "xg": 4.06, "goals": 5, "diff": 0.94, "band": 3.6, "z": 0.51, "regressed": 0.0}, {"player": "Evelyn Ijeh", "team": "NC", "shots": 33, "xg": 8.16, "goals": 9, "diff": 0.84, "band": 4.86, "z": 0.34, "regressed": 0.0}, {"player": "Sophia Wilson", "team": "POR", "shots": 80, "xg": 8.16, "goals": 9, "diff": 0.84, "band": 5.31, "z": 0.31, "regressed": 0.0}, {"player": "Jaedyn Shaw", "team": "NJY", "shots": 41, "xg": 4.16, "goals": 5, "diff": 0.84, "band": 3.79, "z": 0.43, "regressed": 0.0}, {"player": "Trinity Rodman", "team": "WAS", "shots": 64, "xg": 8.22, "goals": 9, "diff": 0.78, "band": 5.25, "z": 0.29, "regressed": 0.0}, {"player": "Olivia Moultrie", "team": "POR", "shots": 37, "xg": 5.07, "goals": 5, "diff": -0.07, "band": 4.1, "z": -0.03, "regressed": 0.0}, {"player": "Debinha", "team": "KC", "shots": 24, "xg": 4.1, "goals": 4, "diff": -0.1, "band": 3.61, "z": -0.05, "regressed": 0.0}, {"player": "Maddie Mercado", "team": "SEA", "shots": 42, "xg": 5.13, "goals": 5, "diff": -0.13, "band": 4.16, "z": -0.06, "regressed": 0.0}, {"player": "Mina Tanaka", "team": "UTA", "shots": 39, "xg": 5.22, "goals": 5, "diff": -0.22, "band": 4.17, "z": -0.1, "regressed": 0.0}, {"player": "Amanda Santos", "team": "BOS", "shots": 35, "xg": 5.58, "goals": 5, "diff": -0.58, "band": 4.24, "z": -0.27, "regressed": 0.0}, {"player": "Riley Jackson", "team": "NC", "shots": 27, "xg": 3.15, "goals": 2, "diff": -1.15, "band": 3.27, "z": -0.69, "regressed": 0.0}, {"player": "Jordynn Dudley", "team": "NJY", "shots": 41, "xg": 5.37, "goals": 3, "diff": -2.37, "band": 4.23, "z": -1.1, "regressed": 0.0}, {"player": "Aissata Traore", "team": "BOS", "shots": 47, "xg": 7.9, "goals": 5, "diff": -2.9, "band": 5.02, "z": -1.13, "regressed": 0.0}, {"player": "Croix Bethune", "team": "KC", "shots": 41, "xg": 5.9, "goals": 3, "diff": -2.9, "band": 4.41, "z": -1.29, "regressed": 0.0}]}, "data": [{"x": 5.903, "y": 3, "badge": "KC", "tooltip": "<div class=\"name\">Croix Bethune</div><div class=\"row\">KC &middot; 1691 min &middot; 41 shots</div><div class=\"row\">xG 5.90 &middot; Goals 3 &middot; margin -2.90</div><div class=\"row\">chance range &plusmn;4.41 &middot; z -1.29 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}, {"x": 8.163, "y": 9, "badge": "POR", "tooltip": "<div class=\"name\">Sophia Wilson</div><div class=\"row\">POR &middot; 1636 min &middot; 80 shots</div><div class=\"row\">xG 8.16 &middot; Goals 9 &middot; margin +0.84</div><div class=\"row\">chance range &plusmn;5.31 &middot; z +0.31 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}, {"x": 8.221, "y": 9, "badge": "WAS", "tooltip": "<div class=\"name\">Trinity Rodman</div><div class=\"row\">WAS &middot; 1774 min &middot; 64 shots</div><div class=\"row\">xG 8.22 &middot; Goals 9 &middot; margin +0.78</div><div class=\"row\">chance range &plusmn;5.25 &middot; z +0.29 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}, {"x": 8.409, "y": 12, "badge": "ORL", "tooltip": "<div class=\"name\">Barbra Banda</div><div class=\"row\">ORL &middot; 1241 min &middot; 60 shots</div><div class=\"row\">xG 8.41 &middot; Goals 12 &middot; margin +3.59</div><div class=\"row\">chance range &plusmn;5.27 &middot; z +1.34 &middot; regressed +0.00</div>", "highlight": true, "annotation": "+3.6 raw, but \u00b15.3 is chance"}, {"x": 7.9, "y": 5, "badge": "BOS", "tooltip": "<div class=\"name\">Aissata Traore</div><div class=\"row\">BOS &middot; 1410 min &middot; 47 shots</div><div class=\"row\">xG 7.90 &middot; Goals 5 &middot; margin -2.90</div><div class=\"row\">chance range &plusmn;5.02 &middot; z -1.13 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}, {"x": 8.157, "y": 9, "badge": "NC", "tooltip": "<div class=\"name\">Evelyn Ijeh</div><div class=\"row\">NC &middot; 1242 min &middot; 33 shots</div><div class=\"row\">xG 8.16 &middot; Goals 9 &middot; margin +0.84</div><div class=\"row\">chance range &plusmn;4.86 &middot; z +0.34 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}, {"x": 4.855, "y": 6, "badge": "UTA", "tooltip": "<div class=\"name\">Cloe Lacasse</div><div class=\"row\">UTA &middot; 1769 min &middot; 34 shots</div><div class=\"row\">xG 4.86 &middot; Goals 6 &middot; margin +1.14</div><div class=\"row\">chance range &plusmn;4.00 &middot; z +0.56 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}, {"x": 5.366, "y": 3, "badge": "NJY", "tooltip": "<div class=\"name\">Jordynn Dudley</div><div class=\"row\">NJY &middot; 1439 min &middot; 41 shots</div><div class=\"row\">xG 5.37 &middot; Goals 3 &middot; margin -2.37</div><div class=\"row\">chance range &plusmn;4.23 &middot; z -1.10 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}, {"x": 5.221, "y": 5, "badge": "UTA", "tooltip": "<div class=\"name\">Mina Tanaka</div><div class=\"row\">UTA &middot; 1415 min &middot; 39 shots</div><div class=\"row\">xG 5.22 &middot; Goals 5 &middot; margin -0.22</div><div class=\"row\">chance range &plusmn;4.17 &middot; z -0.10 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}, {"x": 5.073, "y": 5, "badge": "POR", "tooltip": "<div class=\"name\">Olivia Moultrie</div><div class=\"row\">POR &middot; 1460 min &middot; 37 shots</div><div class=\"row\">xG 5.07 &middot; Goals 5 &middot; margin -0.07</div><div class=\"row\">chance range &plusmn;4.10 &middot; z -0.03 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}, {"x": 3.173, "y": 5, "badge": "WAS", "tooltip": "<div class=\"name\">Leicy Santos</div><div class=\"row\">WAS &middot; 1664 min &middot; 35 shots</div><div class=\"row\">xG 3.17 &middot; Goals 5 &middot; margin +1.83</div><div class=\"row\">chance range &plusmn;3.33 &middot; z +1.08 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}, {"x": 3.146, "y": 2, "badge": "NC", "tooltip": "<div class=\"name\">Riley Jackson</div><div class=\"row\">NC &middot; 1767 min &middot; 27 shots</div><div class=\"row\">xG 3.15 &middot; Goals 2 &middot; margin -1.15</div><div class=\"row\">chance range &plusmn;3.27 &middot; z -0.69 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}, {"x": 4.849, "y": 7, "badge": "HOU", "tooltip": "<div class=\"name\">Katherine Rader</div><div class=\"row\">HOU &middot; 1714 min &middot; 36 shots</div><div class=\"row\">xG 4.85 &middot; Goals 7 &middot; margin +2.15</div><div class=\"row\">chance range &plusmn;4.01 &middot; z +1.05 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}, {"x": 4.101, "y": 4, "badge": "KC", "tooltip": "<div class=\"name\">Debinha</div><div class=\"row\">KC &middot; 930 min &middot; 24 shots</div><div class=\"row\">xG 4.10 &middot; Goals 4 &middot; margin -0.10</div><div class=\"row\">chance range &plusmn;3.61 &middot; z -0.05 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}, {"x": 5.578, "y": 5, "badge": "BOS", "tooltip": "<div class=\"name\">Amanda Santos</div><div class=\"row\">BOS &middot; 1066 min &middot; 35 shots</div><div class=\"row\">xG 5.58 &middot; Goals 5 &middot; margin -0.58</div><div class=\"row\">chance range &plusmn;4.24 &middot; z -0.27 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}, {"x": 3.964, "y": 5, "badge": "SD", "tooltip": "<div class=\"name\">Dudinha</div><div class=\"row\">SD &middot; 1247 min &middot; 36 shots</div><div class=\"row\">xG 3.96 &middot; Goals 5 &middot; margin +1.04</div><div class=\"row\">chance range &plusmn;3.68 &middot; z +0.55 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}, {"x": 4.667, "y": 6, "badge": "LA", "tooltip": "<div class=\"name\">Sveind\u00eds Jane J\u00f3nsd\u00f3ttir</div><div class=\"row\">LA &middot; 1187 min &middot; 26 shots</div><div class=\"row\">xG 4.67 &middot; Goals 6 &middot; margin +1.33</div><div class=\"row\">chance range &plusmn;3.84 &middot; z +0.68 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}, {"x": 4.164, "y": 5, "badge": "NJY", "tooltip": "<div class=\"name\">Jaedyn Shaw</div><div class=\"row\">NJY &middot; 1628 min &middot; 41 shots</div><div class=\"row\">xG 4.16 &middot; Goals 5 &middot; margin +0.84</div><div class=\"row\">chance range &plusmn;3.79 &middot; z +0.43 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}, {"x": 4.056, "y": 5, "badge": "SD", "tooltip": "<div class=\"name\">Lia Eugenia Godfrey</div><div class=\"row\">SD &middot; 1180 min &middot; 24 shots</div><div class=\"row\">xG 4.06 &middot; Goals 5 &middot; margin +0.94</div><div class=\"row\">chance range &plusmn;3.60 &middot; z +0.51 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}, {"x": 5.129, "y": 5, "badge": "SEA", "tooltip": "<div class=\"name\">Maddie Mercado</div><div class=\"row\">SEA &middot; 1489 min &middot; 42 shots</div><div class=\"row\">xG 5.13 &middot; Goals 5 &middot; margin -0.13</div><div class=\"row\">chance range &plusmn;4.16 &middot; z -0.06 &middot; regressed +0.00</div>", "highlight": false, "annotation": null}]}, {"type": "scatter", "tabLabel": "xG vs. xA", "metricLabel": "Player xG vs. xAssists, per 96 minutes", "title": "Croix Bethune is the league's most balanced dual threat", "blurb": "Same player pool, shown per 96 minutes \u2014 who creates chances for themselves (right) vs. for others (up), independent of how many minutes each player has played. This one stays a rate: unlike the finishing chart, the question here is threat per unit of playing time, not how much evidence there is. ", "xAxisLabel": "xG per 96 min", "yAxisLabel": "xAssists per 96 min", "radius": 15, "showBadges": true, "data": [{"x": 0.3351, "y": 0.3206, "badge": "KC", "tooltip": "<div class=\"name\">Croix Bethune</div><div class=\"row\">KC &middot; 1691 min</div><div class=\"row\">xG/96 0.34 &middot; xA/96 0.32 &middot; Goals 3</div>", "highlight": true, "annotation": "0.34 xG/96, 0.32 xA/96"}, {"x": 0.479, "y": 0.1878, "badge": "POR", "tooltip": "<div class=\"name\">Sophia Wilson</div><div class=\"row\">POR &middot; 1636 min</div><div class=\"row\">xG/96 0.48 &middot; xA/96 0.19 &middot; Goals 9</div>", "highlight": false, "annotation": null}, {"x": 0.4449, "y": 0.1376, "badge": "WAS", "tooltip": "<div class=\"name\">Trinity Rodman</div><div class=\"row\">WAS &middot; 1774 min</div><div class=\"row\">xG/96 0.44 &middot; xA/96 0.14 &middot; Goals 9</div>", "highlight": false, "annotation": null}, {"x": 0.6505, "y": 0.1784, "badge": "ORL", "tooltip": "<div class=\"name\">Barbra Banda</div><div class=\"row\">ORL &middot; 1241 min</div><div class=\"row\">xG/96 0.65 &middot; xA/96 0.18 &middot; Goals 12</div>", "highlight": false, "annotation": null}, {"x": 0.5379, "y": 0.1041, "badge": "BOS", "tooltip": "<div class=\"name\">Aissata Traore</div><div class=\"row\">BOS &middot; 1410 min</div><div class=\"row\">xG/96 0.54 &middot; xA/96 0.10 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.6305, "y": 0.0931, "badge": "NC", "tooltip": "<div class=\"name\">Evelyn Ijeh</div><div class=\"row\">NC &middot; 1242 min</div><div class=\"row\">xG/96 0.63 &middot; xA/96 0.09 &middot; Goals 9</div>", "highlight": false, "annotation": null}, {"x": 0.2635, "y": 0.2247, "badge": "UTA", "tooltip": "<div class=\"name\">Cloe Lacasse</div><div class=\"row\">UTA &middot; 1769 min</div><div class=\"row\">xG/96 0.26 &middot; xA/96 0.22 &middot; Goals 6</div>", "highlight": false, "annotation": null}, {"x": 0.358, "y": 0.2288, "badge": "NJY", "tooltip": "<div class=\"name\">Jordynn Dudley</div><div class=\"row\">NJY &middot; 1439 min</div><div class=\"row\">xG/96 0.36 &middot; xA/96 0.23 &middot; Goals 3</div>", "highlight": false, "annotation": null}, {"x": 0.3542, "y": 0.1681, "badge": "UTA", "tooltip": "<div class=\"name\">Mina Tanaka</div><div class=\"row\">UTA &middot; 1415 min</div><div class=\"row\">xG/96 0.35 &middot; xA/96 0.17 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.3336, "y": 0.1612, "badge": "POR", "tooltip": "<div class=\"name\">Olivia Moultrie</div><div class=\"row\">POR &middot; 1460 min</div><div class=\"row\">xG/96 0.33 &middot; xA/96 0.16 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.1831, "y": 0.2218, "badge": "WAS", "tooltip": "<div class=\"name\">Leicy Santos</div><div class=\"row\">WAS &middot; 1664 min</div><div class=\"row\">xG/96 0.18 &middot; xA/96 0.22 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.1709, "y": 0.2012, "badge": "NC", "tooltip": "<div class=\"name\">Riley Jackson</div><div class=\"row\">NC &middot; 1767 min</div><div class=\"row\">xG/96 0.17 &middot; xA/96 0.20 &middot; Goals 2</div>", "highlight": false, "annotation": null}, {"x": 0.2716, "y": 0.1092, "badge": "HOU", "tooltip": "<div class=\"name\">Katherine Rader</div><div class=\"row\">HOU &middot; 1714 min</div><div class=\"row\">xG/96 0.27 &middot; xA/96 0.11 &middot; Goals 7</div>", "highlight": false, "annotation": null}, {"x": 0.4233, "y": 0.2773, "badge": "KC", "tooltip": "<div class=\"name\">Debinha</div><div class=\"row\">KC &middot; 930 min</div><div class=\"row\">xG/96 0.42 &middot; xA/96 0.28 &middot; Goals 4</div>", "highlight": false, "annotation": null}, {"x": 0.5023, "y": 0.1067, "badge": "BOS", "tooltip": "<div class=\"name\">Amanda Santos</div><div class=\"row\">BOS &middot; 1066 min</div><div class=\"row\">xG/96 0.50 &middot; xA/96 0.11 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.3052, "y": 0.2149, "badge": "SD", "tooltip": "<div class=\"name\">Dudinha</div><div class=\"row\">SD &middot; 1247 min</div><div class=\"row\">xG/96 0.31 &middot; xA/96 0.21 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.3774, "y": 0.1685, "badge": "LA", "tooltip": "<div class=\"name\">Sveind\u00eds Jane J\u00f3nsd\u00f3ttir</div><div class=\"row\">LA &middot; 1187 min</div><div class=\"row\">xG/96 0.38 &middot; xA/96 0.17 &middot; Goals 6</div>", "highlight": false, "annotation": null}, {"x": 0.2455, "y": 0.1382, "badge": "NJY", "tooltip": "<div class=\"name\">Jaedyn Shaw</div><div class=\"row\">NJY &middot; 1628 min</div><div class=\"row\">xG/96 0.25 &middot; xA/96 0.14 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.33, "y": 0.1906, "badge": "SD", "tooltip": "<div class=\"name\">Lia Eugenia Godfrey</div><div class=\"row\">SD &middot; 1180 min</div><div class=\"row\">xG/96 0.33 &middot; xA/96 0.19 &middot; Goals 5</div>", "highlight": false, "annotation": null}, {"x": 0.3307, "y": 0.0723, "badge": "SEA", "tooltip": "<div class=\"name\">Maddie Mercado</div><div class=\"row\">SEA &middot; 1489 min</div><div class=\"row\">xG/96 0.33 &middot; xA/96 0.07 &middot; Goals 5</div>", "highlight": false, "annotation": null}]}, {"type": "diverging-bar", "tabLabel": "Goals Added", "metricLabel": "Goals Added (g+), all action types combined", "title": "Sophia Wilson leads the league in total on-ball contribution", "blurb": "ASA's other headline metric \u2014 possession-value contribution (dribbling + fouling + interrupting + passing + receiving + shooting) above average for the position, summed across categories. Top 15 among 500+ minute players.", "valueLabel": "Goals Added", "xAxisLabel": "Goals Added (g+)", "footnote": "\u201cAbove average\u201d is relative to other players in the same general position.", "data": [{"label": "Sophia Wilson (POR)", "value": 4.2033, "highlight": true}, {"label": "Barbra Banda (ORL)", "value": 4.0168, "highlight": false}, {"label": "Trinity Rodman (WAS)", "value": 3.2001, "highlight": false}, {"label": "Olivia Moultrie (POR)", "value": 1.734, "highlight": false}, {"label": "Racheal Kundananji (BAY)", "value": 1.6021, "highlight": false}, {"label": "Dudinha (SD)", "value": 1.4938, "highlight": false}, {"label": "Emma Sears (LOU)", "value": 1.2641, "highlight": false}, {"label": "Evelyn Ijeh (NC)", "value": 0.9339, "highlight": false}, {"label": "Gia Corley (SD)", "value": 0.8804, "highlight": false}, {"label": "Maddie Mercado (SEA)", "value": 0.8365, "highlight": false}, {"label": "Debinha (KC)", "value": 0.7636, "highlight": false}, {"label": "Aissata Traore (BOS)", "value": 0.7053, "highlight": false}, {"label": "Lia Eugenia Godfrey (SD)", "value": 0.5483, "highlight": false}, {"label": "Pietra Tordin (POR)", "value": 0.4692, "highlight": false}, {"label": "Ludmila (SD)", "value": 0.4343, "highlight": false}]}, {"type": "scatter", "tabLabel": "Goalkeepers", "metricLabel": "Shots Faced vs. Goals Saved Above Expected", "title": "Jordan Silkowitz is saving more than any other keeper in the league, despite a light workload", "blurb": "20 goalkeepers, 500+ minutes. Shots faced (right, workload) vs. goals prevented relative to the quality of shots faced (up, axis is xG on target minus goals actually conceded \u2014 positive means outperforming expectation).", "footnote": "Shots faced shown as a season total, not per-96 \u2014 this demo snapshot doesn't have individually-verified minutes for each goalkeeper. build_dashboard.py's live version shows shots faced per 96 minutes.", "xAxisLabel": "Shots faced", "yAxisLabel": "Goals saved above expected", "radius": 15, "data": [{"x": 78, "y": 7.646, "badge": "KC", "tooltip": "<div class=\"name\">Jordan Silkowitz</div><div class=\"row\">KC &middot; 78 shots faced</div><div class=\"row\">Goals saved above expected: +7.65</div>", "highlight": true, "annotation": "Jordan Silkowitz: +7.6 on just 78 shots faced"}, {"x": 91, "y": 5.203, "badge": "ORL", "tooltip": "<div class=\"name\">Claudia Dickey</div><div class=\"row\">ORL &middot; 91 shots faced</div><div class=\"row\">Goals saved above expected: +5.20</div>", "highlight": false, "annotation": null}, {"x": 84, "y": 4.812, "badge": "SD", "tooltip": "<div class=\"name\">Kailen Sheridan</div><div class=\"row\">SD &middot; 84 shots faced</div><div class=\"row\">Goals saved above expected: +4.81</div>", "highlight": false, "annotation": null}, {"x": 96, "y": 3.977, "badge": "WAS", "tooltip": "<div class=\"name\">Katie Lund</div><div class=\"row\">WAS &middot; 96 shots faced</div><div class=\"row\">Goals saved above expected: +3.98</div>", "highlight": false, "annotation": null}, {"x": 73, "y": 3.541, "badge": "POR", "tooltip": "<div class=\"name\">Cassie Miller</div><div class=\"row\">POR &middot; 73 shots faced</div><div class=\"row\">Goals saved above expected: +3.54</div>", "highlight": false, "annotation": null}, {"x": 88, "y": 3.108, "badge": "UTA", "tooltip": "<div class=\"name\">Jayme Cochran</div><div class=\"row\">UTA &middot; 88 shots faced</div><div class=\"row\">Goals saved above expected: +3.11</div>", "highlight": false, "annotation": null}, {"x": 101, "y": 2.664, "badge": "NC", "tooltip": "<div class=\"name\">Anna Moorhouse</div><div class=\"row\">NC &middot; 101 shots faced</div><div class=\"row\">Goals saved above expected: +2.66</div>", "highlight": false, "annotation": null}, {"x": 79, "y": 2.219, "badge": "BOS", "tooltip": "<div class=\"name\">Phallon Tullis-Joyce</div><div class=\"row\">BOS &middot; 79 shots faced</div><div class=\"row\">Goals saved above expected: +2.22</div>", "highlight": false, "annotation": null}, {"x": 85, "y": 1.877, "badge": "SEA", "tooltip": "<div class=\"name\">AD Franch</div><div class=\"row\">SEA &middot; 85 shots faced</div><div class=\"row\">Goals saved above expected: +1.88</div>", "highlight": false, "annotation": null}, {"x": 92, "y": 1.203, "badge": "NJY", "tooltip": "<div class=\"name\">Sam Fisher</div><div class=\"row\">NJY &middot; 92 shots faced</div><div class=\"row\">Goals saved above expected: +1.20</div>", "highlight": false, "annotation": null}, {"x": 97, "y": 0.542, "badge": "HOU", "tooltip": "<div class=\"name\">Emily Alvarado</div><div class=\"row\">HOU &middot; 97 shots faced</div><div class=\"row\">Goals saved above expected: +0.54</div>", "highlight": false, "annotation": null}, {"x": 82, "y": -0.318, "badge": "BAY", "tooltip": "<div class=\"name\">Angelina Anderson</div><div class=\"row\">BAY &middot; 82 shots faced</div><div class=\"row\">Goals saved above expected: -0.32</div>", "highlight": false, "annotation": null}, {"x": 119, "y": -1.204, "badge": "CHI", "tooltip": "<div class=\"name\">Kaylie Collins</div><div class=\"row\">CHI &middot; 119 shots faced</div><div class=\"row\">Goals saved above expected: -1.20</div>", "highlight": false, "annotation": null}, {"x": 94, "y": -1.689, "badge": "DEN", "tooltip": "<div class=\"name\">Mackenzie Chapman</div><div class=\"row\">DEN &middot; 94 shots faced</div><div class=\"row\">Goals saved above expected: -1.69</div>", "highlight": false, "annotation": null}, {"x": 90, "y": -2.033, "badge": "LOU", "tooltip": "<div class=\"name\">Katelyn Rowland</div><div class=\"row\">LOU &middot; 90 shots faced</div><div class=\"row\">Goals saved above expected: -2.03</div>", "highlight": false, "annotation": null}, {"x": 76, "y": -2.417, "badge": "LA", "tooltip": "<div class=\"name\">Didi Haracic</div><div class=\"row\">LA &middot; 76 shots faced</div><div class=\"row\">Goals saved above expected: -2.42</div>", "highlight": false, "annotation": null}, {"x": 41, "y": -2.902, "badge": "CHI", "tooltip": "<div class=\"name\">Justine Vanhaevermaet</div><div class=\"row\">CHI &middot; 41 shots faced</div><div class=\"row\">Goals saved above expected: -2.90</div>", "highlight": false, "annotation": null}, {"x": 33, "y": -3.114, "badge": "DEN", "tooltip": "<div class=\"name\">Bella Kearney</div><div class=\"row\">DEN &middot; 33 shots faced</div><div class=\"row\">Goals saved above expected: -3.11</div>", "highlight": false, "annotation": null}, {"x": 29, "y": -3.588, "badge": "LA", "tooltip": "<div class=\"name\">Cyera Hintzen</div><div class=\"row\">LA &middot; 29 shots faced</div><div class=\"row\">Goals saved above expected: -3.59</div>", "highlight": false, "annotation": null}, {"x": 25, "y": -4.021, "badge": "HOU", "tooltip": "<div class=\"name\">Freya Gregory</div><div class=\"row\">HOU &middot; 25 shots faced</div><div class=\"row\">Goals saved above expected: -4.02</div>", "highlight": false, "annotation": null}]}, {"type": "team-compare", "tabLabel": "Compare Teammates", "metricLabel": "Team Roster Comparison", "title": "Compare any two teammates head-to-head", "blurb": "Pick a team to see how its players stack up on a given metric. All 16 teams, 2+ players each.", "footnote": "xGoals, xAssists, Goals, and Shots shown per 96 minutes. Goals Added shown as 0.00 for players outside this demo's top-15 GA leaderboard, not a true zero.", "teamNames": {"DEN": "Denver Summit FC", "BAY": "Bay FC", "HOU": "Houston Dash", "KC": "Kansas City Current", "SD": "San Diego Wave FC", "SEA": "Seattle Reign FC", "CHI": "Chicago Stars FC", "POR": "Portland Thorns FC", "ORL": "Orlando Pride", "WAS": "Washington Spirit", "UTA": "Utah Royals FC", "LOU": "Racing Louisville FC", "LA": "Angel City FC", "BOS": "Boston Legacy FC", "NJY": "NJ/NY Gotham FC", "NC": "North Carolina Courage"}, "rosters": {"KC": [{"name": "Croix Bethune", "minutes": 1691, "xg96": 0.3351, "xa96": 0.3206, "goals96": 0.1703, "shots96": 2.3276, "ga": 0.0}, {"name": "Debinha", "minutes": 930, "xg96": 0.4233, "xa96": 0.2773, "goals96": 0.4129, "shots96": 2.4774, "ga": 0.764}], "POR": [{"name": "Sophia Wilson", "minutes": 1636, "xg96": 0.479, "xa96": 0.1878, "goals96": 0.5281, "shots96": 4.6944, "ga": 4.203}, {"name": "Olivia Moultrie", "minutes": 1460, "xg96": 0.3336, "xa96": 0.1612, "goals96": 0.3288, "shots96": 2.4329, "ga": 1.734}], "WAS": [{"name": "Trinity Rodman", "minutes": 1774, "xg96": 0.4449, "xa96": 0.1376, "goals96": 0.487, "shots96": 3.4634, "ga": 3.2}, {"name": "Leicy Santos", "minutes": 1664, "xg96": 0.1831, "xa96": 0.2218, "goals96": 0.2885, "shots96": 2.0192, "ga": 0.0}], "ORL": [{"name": "Ally Lemos", "minutes": 1656, "xg96": 0.1003, "xa96": 0.1193, "goals96": 0.0, "shots96": 1.2754, "ga": 0.0}, {"name": "Barbra Banda", "minutes": 1241, "xg96": 0.6505, "xa96": 0.1784, "goals96": 0.9283, "shots96": 4.6414, "ga": 4.017}], "BOS": [{"name": "Aissata Traore", "minutes": 1410, "xg96": 0.5379, "xa96": 0.1041, "goals96": 0.3404, "shots96": 3.2, "ga": 0.705}, {"name": "Amanda Santos", "minutes": 1066, "xg96": 0.5023, "xa96": 0.1067, "goals96": 0.4503, "shots96": 3.152, "ga": 0.0}], "NC": [{"name": "Riley Jackson", "minutes": 1767, "xg96": 0.1709, "xa96": 0.2012, "goals96": 0.1087, "shots96": 1.4669, "ga": 0.0}, {"name": "Evelyn Ijeh", "minutes": 1242, "xg96": 0.6305, "xa96": 0.0931, "goals96": 0.6957, "shots96": 2.5507, "ga": 0.934}], "UTA": [{"name": "Cloe Lacasse", "minutes": 1769, "xg96": 0.2635, "xa96": 0.2247, "goals96": 0.3256, "shots96": 1.8451, "ga": 0.0}, {"name": "Mina Tanaka", "minutes": 1415, "xg96": 0.3542, "xa96": 0.1681, "goals96": 0.3392, "shots96": 2.6459, "ga": 0.0}], "NJY": [{"name": "Jaedyn Shaw", "minutes": 1628, "xg96": 0.2455, "xa96": 0.1382, "goals96": 0.2948, "shots96": 2.4177, "ga": 0.0}, {"name": "Jordynn Dudley", "minutes": 1439, "xg96": 0.358, "xa96": 0.2288, "goals96": 0.2001, "shots96": 2.7352, "ga": 0.0}], "HOU": [{"name": "Katherine Rader", "minutes": 1714, "xg96": 0.2716, "xa96": 0.1092, "goals96": 0.3921, "shots96": 2.0163, "ga": 0.0}, {"name": "Kiki Van Zanten", "minutes": 937, "xg96": 0.2661, "xa96": 0.1589, "goals96": 0.4098, "shots96": 2.5614, "ga": 0.0}], "SD": [{"name": "Dudinha", "minutes": 1247, "xg96": 0.3052, "xa96": 0.2149, "goals96": 0.3849, "shots96": 2.7715, "ga": 1.494}, {"name": "Lia Eugenia Godfrey", "minutes": 1180, "xg96": 0.33, "xa96": 0.1906, "goals96": 0.4068, "shots96": 1.9525, "ga": 0.548}], "LA": [{"name": "Ary Borges", "minutes": 1577, "xg96": 0.1227, "xa96": 0.0528, "goals96": 0.1218, "shots96": 1.4001, "ga": 0.0}, {"name": "Sveind\u00eds Jane J\u00f3nsd\u00f3ttir", "minutes": 1187, "xg96": 0.3774, "xa96": 0.1685, "goals96": 0.4853, "shots96": 2.1028, "ga": 0.0}], "SEA": [{"name": "Maddie Mercado", "minutes": 1489, "xg96": 0.3307, "xa96": 0.0723, "goals96": 0.3224, "shots96": 2.7079, "ga": 0.837}, {"name": "Madeline Dahlien", "minutes": 1241, "xg96": 0.2753, "xa96": 0.1907, "goals96": 0.1547, "shots96": 2.0886, "ga": 0.0}], "DEN": [{"name": "Yazmeen Ryan", "minutes": 1690, "xg96": 0.2197, "xa96": 0.2391, "goals96": 0.2272, "shots96": 2.2154, "ga": 0.0}, {"name": "Melissa Kossler", "minutes": 1281, "xg96": 0.3187, "xa96": 0.148, "goals96": 0.2998, "shots96": 2.3232, "ga": 0.0}], "BAY": [{"name": "Claire Hutton", "minutes": 1832, "xg96": 0.1306, "xa96": 0.0606, "goals96": 0.0524, "shots96": 1.1004, "ga": 0.0}, {"name": "Karlie Lema", "minutes": 1181, "xg96": 0.3828, "xa96": 0.022, "goals96": 0.3251, "shots96": 2.845, "ga": 0.0}], "CHI": [{"name": "Jordyn Huitema", "minutes": 1059, "xg96": 0.3207, "xa96": 0.0697, "goals96": 0.3626, "shots96": 1.2691, "ga": 0.0}, {"name": "Ryan Gareis", "minutes": 1032, "xg96": 0.0918, "xa96": 0.1914, "goals96": 0.0, "shots96": 1.2093, "ga": 0.0}], "LOU": [{"name": "Katie O'Kane", "minutes": 1703, "xg96": 0.1308, "xa96": 0.1351, "goals96": 0.1127, "shots96": 1.6911, "ga": 0.0}, {"name": "Emma Sears", "minutes": 1453, "xg96": 0.2121, "xa96": 0.1526, "goals96": 0.2643, "shots96": 1.916, "ga": 1.264}]}, "stats": [{"key": "ga", "label": "Goals Added (g+)"}, {"key": "xg96", "label": "xGoals per 96"}, {"key": "xa96", "label": "xAssists per 96"}, {"key": "goals96", "label": "Goals per 96"}, {"key": "shots96", "label": "Shots per 96"}, {"key": "minutes", "label": "Minutes"}]}, {"type": "methods", "tabLabel": "Methods & Data", "metricLabel": "Methodology, definitions and limitations", "title": "What these numbers are, how they were computed, and where they break", "blurb": "Every chart on this page is a model output filtered through choices someone made. This tab lists those choices so the rest of the dashboard can be checked rather than believed, and offers the underlying rows as CSV so you can redo any of it.", "sections": [{"heading": "Where the numbers come from", "items": [{"term": "Source", "detail": "American Soccer Analysis, but via a hand-verified static snapshot embedded in demo_dashboard.py rather than a live API call \u2014 this build exists so the page can be regenerated and design-checked without network access. Figures are real but frozen, and the player pool is a ~20-player sample, not the full league."}, {"term": "xG model", "detail": "ASA's own expected-goals model. This matters more than it sounds: xG is a model output, not an observation, and different providers disagree. The same shot can be 0.09 to one model and 0.14 to another, so figures here will not reconcile with Opta-derived or FBref numbers and should not be compared across sources without conversion."}, {"term": "Season", "detail": "2026, all competitions ASA covers, through the build date below."}, {"term": "Built", "detail": "14 August 2026, 17:09 UTC"}]}, {"heading": "Filters and thresholds", "items": [{"term": "Minutes floor", "detail": "500+ minutes played. Every player-level chart draws from the full league above this line \u2014 there is no top-N cut on the scatter charts. Raising the floor trades coverage for stability; lowering it does the reverse."}, {"term": "Shot floor", "detail": "Shot Quality additionally requires 10 or more shots, applied to the raw count."}, {"term": "Penalties", "detail": "NOT excluded in this build \u2014 the demo snapshot has no shot-pattern split available, so finishing and shot-quality figures here include penalties. The live build excludes them."}, {"term": "Per 96 minutes", "detail": "Player rates are per 96 minutes, roughly one full match including stoppage. Team figures are season totals \u2014 a team has no minutes-played denominator."}]}, {"heading": "What the derived quantities mean", "items": [{"term": "Chance band / \u00b1 chance", "detail": "The range within which a perfectly league-average finisher lands 95% of the time, given that player's own shots and shot quality. Goals is modelled as the sum of independent Bernoulli trials, one per shot; because only the total xG is published rather than each shot's value, the variance is computed at the player's mean shot quality, which is the maximum for a fixed total. The band is therefore slightly wider than the truth \u2014 it will call a real finisher unproven before it will invent a finisher who isn't there."}, {"term": "z", "detail": "Goals minus xG divided by that chance standard deviation. |z| below 2 means the player's finishing is not distinguishable from average at the 95% level. Most of the league is below 2 in most seasons; that is the expected result, not a null finding."}, {"term": "Regressed", "detail": "An empirical-Bayes estimate: the raw goals-minus-xG margin multiplied by the share of it the shot volume can actually support. The population variance of true finishing skill is estimated from this pool by shot-weighted method of moments, so the strength of the regression is measured rather than chosen. A player with few shots keeps little of their raw number; a high-volume shooter keeps most of it."}, {"term": "Open play vs. dead ball", "detail": "Open play is ASA's Regular and Fastbreak shot patterns; dead ball is Corner, Free kick and Set piece. Penalties are in neither. The six patterns are mutually exclusive and sum to the unfiltered total, verified against a live team row."}, {"term": "Goals Added (g+)", "detail": "ASA's on-ball value metric, summed across every action type. It already contains passing and receiving value, so it overlaps xA by design."}]}, {"heading": "Regression strength actually used in this build", "items": [{"term": "Qualifying shooters", "detail": "20 players, 802 shots between them."}, {"term": "League mean shot quality", "detail": "0.137 xG per shot."}, {"term": "Estimated skill variance (\u03c4\u00b2)", "detail": "0 \u2014 the spread in finishing across this pool is no wider than independent shots would produce on their own, so every regressed estimate is exactly zero. This is the usual result for a partial season."}, {"term": "Half-weight shot count", "detail": "Not defined, because the estimated skill variance is zero."}, {"term": "Estimator bias", "detail": "The method-of-moments estimate of \u03c4\u00b2 is biased low when the true signal is weak, so this regression is, if anything, slightly too aggressive. It errs toward calling a real finisher average rather than the reverse."}]}, {"heading": "Known limitations \u2014 read these before quoting anything", "items": [{"term": "No context adjustment", "detail": "Nothing here is adjusted for score state, venue, or opponent strength. A team that leads often will look worse than it is on raw rate metrics, because sides in front stop attacking. ASA's endpoints expose home_adjusted and even_game_state flags that this build does not yet use."}, {"term": "Season aggregates only", "detail": "Every figure is a season-to-date total. There is no rolling form window and no match-by-match series, so a team that has changed sharply mid-season reads as its average rather than its current form."}, {"term": "Positions are not normalised", "detail": "Player scatters plot every position on shared axes. A fullback and a striker are not comparable on xG per 96; use the Position Gaps tab for position-relative context, and read cross-position comparisons with care."}, {"term": "Single source", "detail": "All live figures come from one provider's model. Nothing here is triangulated against a second xG source."}, {"term": "Descriptive, not predictive", "detail": "These are measurements of what has happened. No figure on this page is a forecast, and the regressed finishing estimate is a better guess at present skill, not a projection of future goals."}]}, {"heading": "This is the demo build, not the live one", "items": [{"term": "Player pool", "detail": "About 20 hand-verified players, not the full qualifying league. Any 'league-wide' phrasing on the charts describes this sample."}, {"term": "Penalties", "detail": "Included, because the snapshot has no shot-pattern breakdown to subtract. The live build excludes them."}, {"term": "Missing tabs", "detail": "Open Play vs. Set Pieces, MVP Tracker and Position Gaps need live endpoints and are absent here."}, {"term": "Goalkeepers", "detail": "Shown as raw shots faced rather than per 96, because per-keeper minutes were never independently verified for this snapshot."}]}], "downloads": [{"label": "Player finishing (demo sample)", "filename": "nwsl_2026_finishing_demo.csv", "csv": "Player,Team,Shots,xG,Goals,G\u2212xG,\u00b1 chance,z,Regressed\nBarbra Banda,ORL,60,8.41,12,3.59,5.27,1.34,0.0\nKatherine Rader,HOU,36,4.85,7,2.15,4.01,1.05,0.0\nLeicy Santos,WAS,35,3.17,5,1.83,3.33,1.08,0.0\nSveind\u00eds Jane J\u00f3nsd\u00f3ttir,LA,26,4.67,6,1.33,3.84,0.68,0.0\nCloe Lacasse,UTA,34,4.86,6,1.14,4.0,0.56,0.0\nDudinha,SD,36,3.96,5,1.04,3.68,0.55,0.0\nLia Eugenia Godfrey,SD,24,4.06,5,0.94,3.6,0.51,0.0\nEvelyn Ijeh,NC,33,8.16,9,0.84,4.86,0.34,0.0\nSophia Wilson,POR,80,8.16,9,0.84,5.31,0.31,0.0\nJaedyn Shaw,NJY,41,4.16,5,0.84,3.79,0.43,0.0\nTrinity Rodman,WAS,64,8.22,9,0.78,5.25,0.29,0.0\nOlivia Moultrie,POR,37,5.07,5,-0.07,4.1,-0.03,0.0\nDebinha,KC,24,4.1,4,-0.1,3.61,-0.05,0.0\nMaddie Mercado,SEA,42,5.13,5,-0.13,4.16,-0.06,0.0\nMina Tanaka,UTA,39,5.22,5,-0.22,4.17,-0.1,0.0\nAmanda Santos,BOS,35,5.58,5,-0.58,4.24,-0.27,0.0\nRiley Jackson,NC,27,3.15,2,-1.15,3.27,-0.69,0.0\nJordynn Dudley,NJY,41,5.37,3,-2.37,4.23,-1.1,0.0\nAissata Traore,BOS,47,7.9,5,-2.9,5.02,-1.13,0.0\nCroix Bethune,KC,41,5.9,3,-2.9,4.41,-1.29,0.0"}]}];
 
 // ---------- tiny chart-drawing library (no dependencies) ----------
 const svgNS = "http://www.w3.org/2000/svg";
@@ -199,7 +283,26 @@ function drawDivergingBar(container, cfg) {
     // that already exists.
     const effective = activeCid === null ? cfg.data
       : cfg.data.map(d => ({...d, highlight: d.__cid === activeCid}));
-    const data = [...effective].sort((a, b) => a.value - b.value);
+
+    // onSelect: optional hook so a caller can react to the reader reassigning
+    // the highlight -- passed the clicked row, or null when showing the curated
+    // default. Used by drawPresetCompare to swap the panel's headline/blurb to
+    // the clicked player. Absent on every existing chart, so behavior there is
+    // unchanged.
+    if (cfg.onSelect) {
+      cfg.onSelect(activeCid === null
+        ? null
+        : effective.find(d => d.__cid === activeCid) || null);
+    }
+    // Round 21: best-at-top, worst-at-bottom is now the default for every
+    // diverging-bar chart, not just ranked leaderboards -- the earlier
+    // ascending default (most-negative-at-top) read as upside down to a
+    // reader, since row index 0 renders at the top of the SVG (y = i * rowH,
+    // and SVG y grows downward) regardless of what the values mean. sortAsc
+    // is the escape hatch if a future chart genuinely needs the opposite;
+    // nothing in this project currently does. (cfg.sortDesc is no longer
+    // read -- descending is the default now, not an opt-in.)
+    const data = [...effective].sort((a, b) => cfg.sortAsc ? a.value - b.value : b.value - a.value);
     const longestLabel = Math.max(...data.map(d => d.label.length));
     const margin = {top: 8, right: 30, bottom: 34, left: Math.max(90, longestLabel * 6.5 + 12)};
     const width = 820 - margin.left - margin.right;
@@ -281,8 +384,24 @@ function drawDivergingBar(container, cfg) {
   renderOnce();
 }
 
-function resolveCollisions(points, r, padding) {
+function resolveCollisions(points, r, padding, bounds) {
+  // bounds: optional {width, height} of the plot area. Without it, a dense
+  // cluster (e.g. 249 players packed into the bottom-left corner of a
+  // per-96 chart) inflates outward until it escapes the axes entirely --
+  // points end up drawn below the x-axis and left of the y-axis, i.e. "off
+  // the chart". Clamping INSIDE the loop (rather than once at the end) means
+  // a point pinned against an edge still pushes its neighbors, so the
+  // cluster spreads along the edge instead of stacking on top of it.
   const minDist = r * 2 + padding;
+  const lo = r + 1;
+  const hiX = bounds ? bounds.width - r - 1 : Infinity;
+  const hiY = bounds ? bounds.height - r - 1 : Infinity;
+  const clamp = (p) => {
+    if (!bounds) return;
+    p.x = Math.max(lo, Math.min(hiX, p.x));
+    p.y = Math.max(lo, Math.min(hiY, p.y));
+  };
+  points.forEach(clamp);
   for (let iter = 0; iter < 300; iter++) {
     let moved = false;
     for (let i = 0; i < points.length; i++) {
@@ -296,6 +415,7 @@ function resolveCollisions(points, r, padding) {
           const ux = dx / dist, uy = dy / dist;
           a.x -= ux * push; a.y -= uy * push;
           b.x += ux * push; b.y += uy * push;
+          clamp(a); clamp(b);
           moved = true;
         }
       }
@@ -303,6 +423,96 @@ function resolveCollisions(points, r, padding) {
     if (!moved) break;
   }
   return points;
+}
+
+// Sortable data table rendered under a chart. Exists because a hover tooltip
+// is not a view of the data -- it shows one point at a time, needs a pointer,
+// and cannot be scanned, compared, or read by anyone using a keyboard or a
+// screen reader. Any chart that carries per-point numbers worth quoting gets
+// one of these as the non-hover-dependent way to read the same values.
+function buildDataTable(spec) {
+  const wrap = document.createElement("div");
+  wrap.className = "table-wrap";
+  if (spec.caption) {
+    const cap = document.createElement("p");
+    cap.className = "table-caption";
+    cap.innerHTML = spec.caption;
+    wrap.appendChild(cap);
+  }
+  const scroller = document.createElement("div");
+  scroller.className = "table-scroll";
+  const table = document.createElement("table");
+  table.className = "data-table";
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  spec.columns.forEach((col, ci) => {
+    const th = document.createElement("th");
+    th.textContent = col.label;
+    th.className = col.num ? "num" : "";
+    th.tabIndex = 0;
+    th.setAttribute("role", "button");
+    th.setAttribute("aria-label", `Sort by ${col.label}`);
+    const doSort = () => sortBy(ci);
+    th.addEventListener("click", doSort);
+    th.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); doSort(); }
+    });
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  table.appendChild(tbody);
+  scroller.appendChild(table);
+  wrap.appendChild(scroller);
+
+  let sortCol = null, sortDesc = true;
+  let rows = spec.rows.slice();
+
+  function paint() {
+    tbody.innerHTML = "";
+    rows.forEach(r => {
+      const tr = document.createElement("tr");
+      spec.columns.forEach(col => {
+        const td = document.createElement("td");
+        const v = r[col.key];
+        // An empty string, not "null"/"undefined": a missing z-score (too few
+        // shots to compute one) is genuinely absent, and printing a zero there
+        // would assert something the data doesn't say.
+        td.textContent = (v === null || v === undefined) ? "" : v;
+        td.className = col.num ? "num" : "";
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    headRow.querySelectorAll("th").forEach((th, i) => {
+      th.classList.toggle("sorted", i === sortCol);
+      th.setAttribute("aria-sort", i === sortCol ? (sortDesc ? "descending" : "ascending") : "none");
+    });
+  }
+
+  function sortBy(ci) {
+    const col = spec.columns[ci];
+    if (sortCol === ci) sortDesc = !sortDesc;
+    else { sortCol = ci; sortDesc = true; }
+    rows.sort((a, b) => {
+      let av = a[col.key], bv = b[col.key];
+      // Missing values sort to the bottom in BOTH directions rather than
+      // riding to the top as a phantom minimum -- an absent number is not a
+      // small number.
+      const aMissing = (av === null || av === undefined || av === "");
+      const bMissing = (bv === null || bv === undefined || bv === "");
+      if (aMissing && bMissing) return 0;
+      if (aMissing) return 1;
+      if (bMissing) return -1;
+      if (col.num) return sortDesc ? bv - av : av - bv;
+      return sortDesc ? String(bv).localeCompare(String(av)) : String(av).localeCompare(String(bv));
+    });
+    paint();
+  }
+
+  paint();
+  return wrap;
 }
 
 function drawScatter(container, cfg) {
@@ -313,8 +523,14 @@ function drawScatter(container, cfg) {
   cfg.data.forEach((d, i) => { if (d.__cid === undefined) d.__cid = i; });
   let activeCid = null; // null = show the curated default highlight
 
+  // The SVG is redrawn from scratch on every highlight swap, but the data
+  // table underneath is not -- it lives in its own host appended after this
+  // one, so clicking a bubble doesn't wipe the reader's chosen sort order.
+  const chartHost = document.createElement("div");
+  container.appendChild(chartHost);
+
   function renderOnce() {
-    container.innerHTML = "";
+    chartHost.innerHTML = "";
     // Reader-driven highlight swap -- see drawDivergingBar for the same
     // pattern. Clicking a bubble makes it the sole highlighted bubble;
     // every other bubble mutes to gray, same as the curated default. If the
@@ -333,34 +549,83 @@ function drawScatter(container, cfg) {
     const svg = el("svg", {width: width + margin.left + margin.right, height: height + margin.top + margin.bottom});
     const g = el("g", {transform: `translate(${margin.left},${margin.top})`});
     svg.appendChild(g);
-    container.appendChild(svg);
+    chartHost.appendChild(svg);
 
-    const xMax = Math.max(...data.map(d => d.x)) * 1.15;
-    const yMax = Math.max(...data.map(d => d.y)) * 1.15;
-    const xScale = v => (v / xMax) * width;
+    const xMin = Math.min(...data.map(d => d.x));
+    const xMax = Math.max(...data.map(d => d.x));
+    const yMin = Math.min(...data.map(d => d.y));
+    const yMax = Math.max(...data.map(d => d.y));
+    // Add 15% padding above/below the data range to match the aesthetic of the original design
+    const xRange = xMax - xMin;
+    const yRange = yMax - yMin;
+    // zeroOrigin: anchor both axes at zero instead of padding around the data
+    // range. Needed by any chart carrying a chance band, because that band is
+    // a fan pinned at the origin -- cropping the axes to the data turns the
+    // fan into a floating wedge whose shape (widening with volume) is the
+    // entire message. Left off by default: for charts without a band, zooming
+    // to the data is the better use of the space.
+    const xScaleMin = cfg.zeroOrigin ? 0 : xMin - xRange * 0.075;
+    const xScaleMax = xMax + xRange * 0.075;
+    const yScaleMin = cfg.zeroOrigin ? 0 : yMin - yRange * 0.075;
+    const yScaleMax = yMax + yRange * 0.075;
+
+    const xScale = v => ((v - xScaleMin) / (xScaleMax - xScaleMin)) * width;
     // invertY: plot higher values lower on screen (useful when "lower is better",
     // e.g. xG Against, so "up" reads as "good" on both axes at once)
-    const yScale = cfg.invertY ? (v => (v / yMax) * height) : (v => height - (v / yMax) * height);
+    const yScale = cfg.invertY ? (v => ((v - yScaleMin) / (yScaleMax - yScaleMin)) * height) : (v => height - ((v - yScaleMin) / (yScaleMax - yScaleMin)) * height);
 
-    ticksFor(0, xMax, 8).forEach(t => g.appendChild(el("line", {class: "gridline", x1: xScale(t), x2: xScale(t), y1: 0, y2: height})));
-    ticksFor(0, yMax, 8).forEach(t => g.appendChild(el("line", {class: "gridline", x1: 0, x2: width, y1: yScale(t), y2: yScale(t)})));
+    // Tick precision follows the tick STEP, not a fixed 2 decimals: season xG
+     // totals step by 5 and want "20", while a per-96 g+ axis steps by 0.05 and
+    // needs "0.05". Same helper for both axes so they stay consistent.
+    const xTicks = ticksFor(xScaleMin, xScaleMax, 8);
+    const yTicks = ticksFor(yScaleMin, yScaleMax, 8);
+    const fmtFor = (ticks) => {
+      const step = ticks.length > 1 ? Math.abs(ticks[1] - ticks[0]) : 1;
+      const dp = Math.min(3, Math.max(0, Math.ceil(-Math.log10(step))));
+      return (t) => (t === 0 ? "0" : t.toFixed(dp));
+    };
+    const fmtX = fmtFor(xTicks), fmtY = fmtFor(yTicks);
+
+    xTicks.forEach(t => g.appendChild(el("line", {class: "gridline", x1: xScale(t), x2: xScale(t), y1: 0, y2: height})));
+    yTicks.forEach(t => g.appendChild(el("line", {class: "gridline", x1: 0, x2: width, y1: yScale(t), y2: yScale(t)})));
 
     const xAxis = el("g", {class: "axis", transform: `translate(0,${height})`});
-    ticksFor(0, xMax, 8).forEach(t => {
-      const txt = el("text", {x: xScale(t), y: 18, "text-anchor": "middle"}); txt.textContent = t; xAxis.appendChild(txt);
+    xTicks.forEach(t => {
+      const txt = el("text", {x: xScale(t), y: 18, "text-anchor": "middle"}); txt.textContent = fmtX(t); xAxis.appendChild(txt);
     });
     xAxis.appendChild(el("line", {x1: 0, x2: width, y1: 0, y2: 0}));
     g.appendChild(xAxis);
 
     const yAxis = el("g", {class: "axis"});
-    ticksFor(0, yMax, 8).forEach(t => {
-      const txt = el("text", {x: -10, y: yScale(t) + 4, "text-anchor": "end"}); txt.textContent = t; yAxis.appendChild(txt);
+    yTicks.forEach(t => {
+      const txt = el("text", {x: -10, y: yScale(t) + 4, "text-anchor": "end"}); txt.textContent = fmtY(t); yAxis.appendChild(txt);
     });
     yAxis.appendChild(el("line", {x1: 0, x2: 0, y1: 0, y2: height}));
     g.appendChild(yAxis);
 
     const xLabel = el("text", {class: "axis-label", x: width / 2, y: height + 38, "text-anchor": "middle"}); xLabel.textContent = cfg.xAxisLabel; g.appendChild(xLabel);
     const yLabel = el("text", {class: "axis-label", transform: "rotate(-90)", x: -height / 2, y: -40, "text-anchor": "middle"}); yLabel.textContent = cfg.yAxisLabel; g.appendChild(yLabel);
+
+    // Chance band: the region in which a perfectly average finisher lands 95%
+    // of the time. Drawn BEFORE the reference line and the bubbles so it reads
+    // as ground rather than as a mark -- it is context for the points, not a
+    // series of its own.
+    //
+    // Band values are clamped into the plot's y-range instead of being folded
+    // into the scale domain. Letting the band set the domain would compress
+    // every actual data point to make room for an envelope that is widest
+    // exactly where nobody plots (the low-volume left edge); clamping instead
+    // lets the ribbon run off the top of the panel, which reads correctly as
+    // "and it keeps going".
+    if (cfg.band && cfg.band.points && cfg.band.points.length > 1) {
+      const clampY = v => Math.min(Math.max(v, yScaleMin), yScaleMax);
+      const bp = cfg.band.points.filter(p => p[0] >= xScaleMin && p[0] <= xScaleMax);
+      if (bp.length > 1) {
+        const top = bp.map(p => `${xScale(p[0])},${yScale(clampY(p[2]))}`);
+        const bot = bp.slice().reverse().map(p => `${xScale(p[0])},${yScale(clampY(p[1]))}`);
+        g.appendChild(el("path", {class: "chance-band", d: `M${top.join(" L")} L${bot.join(" L")} Z`}));
+      }
+    }
 
     if (cfg.refLine) {
       const lim = Math.min(xMax, yMax);
@@ -373,9 +638,16 @@ function drawScatter(container, cfg) {
       g.appendChild(el("line", {class: "refline", x1: 0, x2: width, y1: yScale(medY), y2: yScale(medY)}));
     }
 
-    // true data positions, then nudge apart only enough to stop overlap
+    // Dense pool (full league, 100-250+ players): plot TRUE positions and let
+    // overlap read as density, with translucent marks. Collision-nudging that
+    // many points does two bad things -- it inflates the cluster until points
+    // sit outside the axes entirely, and what's left is a rigid lattice that
+    // no longer shows where anyone actually is. Nudging is still right for the
+    // small labeled charts (16 teams, ~20 keepers), where a legible 3-letter
+    // badge matters more than sub-pixel position accuracy.
+    const dense = cfg.showBadges === false || data.length > 80;
     const points = data.map(d => ({x: xScale(d.x), y: yScale(d.y), d}));
-    resolveCollisions(points, R, 3);
+    if (!dense) resolveCollisions(points, R, 3, {width, height});
 
     const hasHighlight = data.some(d => d.highlight);
 
@@ -392,11 +664,24 @@ function drawScatter(container, cfg) {
           stroke: "var(--baseline)", "stroke-width": 1, "stroke-dasharray": "2 2",
         }));
       }
-      const circle = el("circle", {class: "bubble" + (isMuted ? " muted" : ""), r: R});
-      const label = el("text", {class: "badge-text" + (isMuted ? " muted" : ""), dy: "0.32em", "text-anchor": "middle"});
-      label.textContent = d.badge;
+      // In dense mode the emphasized point is drawn larger so the one point the
+      // title is about still wins the eye at a glance (Design Guidelines: size
+      // and color are both preattentive; the muted crowd gets neither).
+      const rr = (dense && d.highlight) ? R * 1.9 : R;
+      const circle = el("circle", {
+        class: "bubble" + (isMuted ? " muted" : "") + (dense && isMuted ? " dense" : ""), r: rr,
+      });
       node.appendChild(circle);
-      node.appendChild(label);
+      // cfg.showBadges === false means the pool is too dense for an always-on
+      // 3-letter team badge on every bubble (chart_builders.scatter_display_params
+      // decides this past ~40 points): a 249-player chart turns into unreadable
+      // label soup and the labels overflow their own bubbles. In that mode only
+      // the emphasized point keeps a badge; everyone else is identified on hover.
+      if (cfg.showBadges !== false || d.highlight) {
+        const label = el("text", {class: "badge-text" + (isMuted ? " muted" : ""), dy: "0.32em", "text-anchor": "middle"});
+        label.textContent = d.badge;
+        node.appendChild(label);
+      }
 
       if (d.highlight && d.annotation) {
         // Prefer placing the annotation beside the bubble (right, or left if
@@ -452,7 +737,20 @@ function drawScatter(container, cfg) {
     });
   }
 
+  if (cfg.band) {
+    const legend = document.createElement("div");
+    legend.className = "legend";
+    legend.innerHTML = `
+      <div class="legend-item"><span class="legend-swatch band-swatch"></span>${cfg.band.label || "Chance band"} — inside this, the gap is not distinguishable from luck</div>
+    `;
+    container.insertBefore(legend, chartHost);
+  }
+
   renderOnce();
+
+  if (cfg.table && cfg.table.rows && cfg.table.rows.length) {
+    container.appendChild(buildDataTable(cfg.table));
+  }
 }
 
 function drawTeamCompare(container, cfg) {
@@ -653,6 +951,205 @@ function drawSeasonCompare(container, cfg) {
   render();
 }
 
+function drawPresetCompare(container, cfg) {
+  // Same dropdown-driven pattern as drawSeasonCompare, but the picker selects a
+  // WEIGHTING preset rather than a season. One deliberate difference:
+  //   - The panel headline above this chart states rank stability across every
+  //     weighting and does NOT change with the dropdown -- that stability is
+  //     the finding. The dropdown only changes which single bar is emphasized.
+  // (Round 21: best-at-top is now drawDivergingBar's default for every chart,
+  // not just this one, so the sortDesc flag this comment used to explain no
+  // longer needs calling out here specifically.)
+  const pickerRow = document.createElement("div");
+  pickerRow.className = "picker-row";
+
+  const group = document.createElement("div");
+  group.className = "picker-group";
+  const pickerLabel = document.createElement("div");
+  pickerLabel.className = "picker-label";
+  pickerLabel.textContent = cfg.pickerLabel || "Weighting";
+  const presetSelect = document.createElement("select");
+  cfg.presets.forEach(p => {
+    const opt = el2("option", {value: p.key});
+    opt.textContent = p.label;
+    presetSelect.appendChild(opt);
+  });
+  presetSelect.value = cfg.defaultPreset || cfg.presets[0].key;
+  group.appendChild(pickerLabel);
+  group.appendChild(presetSelect);
+  pickerRow.appendChild(group);
+  container.appendChild(pickerRow);
+
+  const chartMount = document.createElement("div");
+  container.appendChild(chartMount);
+  const caption = document.createElement("p");
+  caption.className = "compare-caption";
+  container.appendChild(caption);
+
+  // The panel's own <h2>/blurb live OUTSIDE this chart mount (they're built by
+  // the tab loop below), so reach up to them. Clicking a bar swaps in that
+  // player's headline and story; deselecting restores the panel's default --
+  // the league-wide stability finding. Stashing the defaults on first run means
+  // a revert never has to reconstruct them from cfg.
+  const panel = container.closest(".panel");
+  const headEl = panel ? panel.querySelector("h2") : null;
+  const blurbEl = panel ? panel.querySelector(".blurb") : null;
+  const defaultHead = headEl ? headEl.textContent : "";
+  const defaultBlurb = blurbEl ? blurbEl.textContent : "";
+  // Announce the swap to screen readers -- the visual change is obvious, the
+  // text change is not.
+  if (headEl) headEl.setAttribute("aria-live", "polite");
+
+  function showSelection(row) {
+    if (!headEl || !blurbEl) return;
+    if (row && row.headline) {
+      headEl.textContent = row.headline;
+      blurbEl.textContent = row.story || "";
+    } else {
+      headEl.textContent = defaultHead;
+      blurbEl.textContent = defaultBlurb;
+    }
+  }
+
+  function render() {
+    chartMount.innerHTML = "";
+    const rows = (cfg.byPreset || {})[presetSelect.value] || [];
+    if (rows.length === 0) {
+      caption.textContent = "No qualifying players for this weighting.";
+      return;
+    }
+    drawDivergingBar(chartMount, {
+      data: rows.map(r => ({label: r.label, value: r.value,
+                            highlight: r.highlight, extra: r.extra,
+                            headline: r.headline, story: r.story})),
+      valueLabel: cfg.valueLabel,
+      xAxisLabel: cfg.xAxisLabel || cfg.valueLabel,
+      oneSided: true,
+      onSelect: showSelection,
+    });
+    caption.textContent = (cfg.captions || {})[presetSelect.value] || "";
+  }
+
+  // Changing the weighting rebuilds the bar chart, which resets its own
+  // selection to null and fires onSelect(null) -- so the panel text returns to
+  // the default automatically, no extra reset needed here.
+  presetSelect.addEventListener("change", render);
+  render();
+}
+
+function drawPositionGrid(container, cfg) {
+  // Heatmap: teams down, ASA's positions across (defensive-most to
+  // attacking-most, so the grid reads like a pitch). Colour is the established
+  // diverging pair at varying opacity -- no new hues, per the Design
+  // Guidelines' "every non-gray colour maps to something specific" rule.
+  //
+  // Cells without enough minutes are rendered as an explicit neutral, never as
+  // a pale red: "we don't know" must not look like "slightly weak".
+  const positions = cfg.positions;
+  const teams = cfg.teams;
+  const byKey = {};
+  cfg.cells.forEach(c => { byKey[c.abbr + "|" + c.position] = c; });
+
+  const labelW = 54, headH = 22, rowH = 24, gap = 2;
+  const cellW = Math.floor((820 - labelW) / positions.length) - gap;
+  const width = labelW + positions.length * (cellW + gap);
+  const height = headH + teams.length * rowH;
+
+  const panel = container.closest(".panel");
+  const headEl = panel ? panel.querySelector("h2") : null;
+  const blurbEl = panel ? panel.querySelector(".blurb") : null;
+  const defaultHead = headEl ? headEl.textContent : "";
+  const defaultBlurb = blurbEl ? blurbEl.textContent : "";
+  if (headEl) headEl.setAttribute("aria-live", "polite");
+
+  const chartMount = document.createElement("div");
+  container.appendChild(chartMount);
+  const caption = document.createElement("p");
+  caption.className = "compare-caption";
+  container.appendChild(caption);
+
+  const maxAbs = Math.max(
+    ...cfg.cells.filter(c => c.enough).map(c => Math.abs(c.value)), 0.01);
+  let activeKey = null;
+
+  function fillFor(c) {
+    if (!c || !c.enough) return "var(--surface-2)";
+    const t = Math.min(1, Math.abs(c.value) / maxAbs);
+    // Floor the opacity so a near-zero cell is still visibly "measured".
+    // Amber 201,138,46 (#C98A2E) is the project's positive/emphasis colour as
+    // of round 20. This literal was still the retired blue #2a78d6 until round
+    // 22 -- it's an rgba() built at runtime for the opacity ramp, so it never
+    // read var(--series-1) and the round-20 sweep missed it. The Position Gaps
+    // grid was the last chart in the project still painting positive values
+    // blue.
+    return (c.value < 0 ? "rgba(227, 73, 72, " : "rgba(201, 138, 46, ")
+           + (0.15 + 0.85 * t).toFixed(3) + ")";
+  }
+
+  function renderOnce() {
+    chartMount.innerHTML = "";
+    const svg = el("svg", {width: width, height: height});
+    chartMount.appendChild(svg);
+
+    const emphKey = activeKey || cfg.emphasisKey;
+
+    positions.forEach((p, j) => {
+      const t = el("text", {class: "axis-label", x: labelW + j * (cellW + gap) + cellW / 2,
+                            y: headH - 8, "text-anchor": "middle"});
+      t.textContent = p;
+      svg.appendChild(t);
+    });
+
+    teams.forEach((team, i) => {
+      const y = headH + i * rowH;
+      const lbl = el("text", {class: "bar-label", x: labelW - 10,
+                              y: y + rowH / 2 + 4, "text-anchor": "end"});
+      lbl.textContent = team.abbr;
+      svg.appendChild(lbl);
+
+      positions.forEach((p, j) => {
+        const key = team.abbr + "|" + p;
+        const c = byKey[key];
+        const x = labelW + j * (cellW + gap);
+        const isEmph = key === emphKey;
+        const rect = el("rect", {
+          x: x, y: y + 1, width: cellW, height: rowH - 3, rx: 2,
+          fill: fillFor(c),
+          stroke: isEmph ? "var(--text-primary)" : "none",
+          "stroke-width": isEmph ? 2 : 0,
+        });
+        rect.style.cursor = c && c.enough ? "pointer" : "default";
+        if (c) {
+          rect.addEventListener("mouseenter", (ev) => showTooltip(c.tooltip, ev));
+          rect.addEventListener("mousemove", moveTooltip);
+          rect.addEventListener("mouseleave", hideTooltip);
+          if (c.enough) {
+            rect.addEventListener("click", (ev) => {
+              ev.stopPropagation();
+              activeKey = (activeKey === key) ? null : key;
+              renderOnce();
+            });
+          }
+        }
+        svg.appendChild(rect);
+      });
+    });
+
+    svg.addEventListener("click", (ev) => {
+      if (ev.target === svg && activeKey !== null) { activeKey = null; renderOnce(); }
+    });
+
+    const shown = activeKey ? byKey[activeKey] : null;
+    if (headEl && blurbEl) {
+      headEl.textContent = shown && shown.headline ? shown.headline : defaultHead;
+      blurbEl.textContent = shown && shown.story ? shown.story : defaultBlurb;
+    }
+    caption.textContent = (shown && shown.caption) || cfg.defaultCaption || "";
+  }
+
+  renderOnce();
+}
+
 function drawShotMap(container, cfg) {
   // Pitch diagram in StatsBomb's coordinate system (0-120 long, 0-80
   // wide), shots normalized to attack rightward so they cluster near the
@@ -721,6 +1218,65 @@ function drawShotMap(container, cfg) {
   container.insertBefore(legend, svg);
 }
 
+// Methods & Data: prose, not a chart. It renders here rather than living in a
+// separate README because the question it answers ("what am I actually looking
+// at?") is asked while looking at the charts, and an answer one click away in
+// the same page is the only version anyone reads.
+function drawMethods(container, cfg) {
+  (cfg.sections || []).forEach(section => {
+    const h = document.createElement("h3");
+    h.className = "methods-heading";
+    h.textContent = section.heading;
+    container.appendChild(h);
+    const dl = document.createElement("dl");
+    dl.className = "methods-list";
+    (section.items || []).forEach(item => {
+      const dt = document.createElement("dt");
+      dt.textContent = item.term;
+      const dd = document.createElement("dd");
+      dd.innerHTML = item.detail;
+      dl.appendChild(dt);
+      dl.appendChild(dd);
+    });
+    container.appendChild(dl);
+  });
+
+  if (cfg.downloads && cfg.downloads.length) {
+    const h = document.createElement("h3");
+    h.className = "methods-heading";
+    h.textContent = "Download the underlying data";
+    container.appendChild(h);
+    const note = document.createElement("p");
+    note.className = "blurb";
+    note.textContent = "The exact rows these charts were drawn from, as CSV. Nothing is fetched — the data is already in this page, so these work offline and will keep working if the API changes.";
+    container.appendChild(note);
+    const row = document.createElement("div");
+    row.className = "download-row";
+    cfg.downloads.forEach(dl => {
+      const btn = document.createElement("button");
+      btn.className = "download-btn";
+      btn.textContent = `${dl.label} (CSV)`;
+      btn.addEventListener("click", () => {
+        // Blob + object URL rather than a data: URI: data URIs hit length
+        // limits in some browsers at full-league size, and an object URL also
+        // lets the download carry a real filename. Revoked on the next tick so
+        // the page doesn't leak a URL per click.
+        const blob = new Blob([dl.csv], {type: "text/csv;charset=utf-8"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = dl.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+      });
+      row.appendChild(btn);
+    });
+    container.appendChild(row);
+  }
+}
+
 // ---------- build tabs + panels ----------
 const tabsEl = document.getElementById("tabs");
 const panelsEl = document.getElementById("panels");
@@ -734,6 +1290,11 @@ CHARTS.forEach((chart, i) => {
     document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById("panel-" + i).classList.add("active");
+    // On phones the tab bar is a single horizontally-scrolling row, so a tab
+    // near the end can be selected while only half visible. inline:"nearest"
+    // pulls it fully into the strip; block:"nearest" stops the page itself
+    // from jumping vertically at the same time.
+    if (btn.scrollIntoView) btn.scrollIntoView({block: "nearest", inline: "nearest"});
   });
   tabsEl.appendChild(btn);
 
@@ -749,7 +1310,10 @@ CHARTS.forEach((chart, i) => {
   if (chart.type === "team-compare") drawTeamCompare(mount, chart);
   if (chart.type === "line") drawLine(mount, chart);
   if (chart.type === "season-compare") drawSeasonCompare(mount, chart);
+  if (chart.type === "preset-compare") drawPresetCompare(mount, chart);
+  if (chart.type === "position-grid") drawPositionGrid(mount, chart);
   if (chart.type === "shot-map") drawShotMap(mount, chart);
+  if (chart.type === "methods") drawMethods(mount, chart);
 });
 </script>
 </body>

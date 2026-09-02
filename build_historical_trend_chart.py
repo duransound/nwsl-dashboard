@@ -85,6 +85,7 @@ def main():
         title="NWSL Historical Trends (2013-2019)",
         subtitle="League and team scoring for the NWSL's first seven seasons, via the nwslR project's historical data -- years American Soccer Analysis's API doesn't cover.",
         charts=[league_chart, team_chart],
+        source_credit="nwslR (github.com/adror1/nwslR)",
     )
     with open("historical_trends_demo.html", "w") as f:
         f.write(html)

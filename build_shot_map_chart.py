@@ -118,6 +118,7 @@ def main():
         title="NWSL Shot Map",
         subtitle=f"Real shot locations and xG from {match_label or ('match ' + str(match_id))}, via StatsBomb's free open event data.",
         charts=[chart],
+        source_credit="StatsBomb Open Data (github.com/statsbomb/open-data)",
     )
     with open(args.out, "w") as f:
         f.write(html)

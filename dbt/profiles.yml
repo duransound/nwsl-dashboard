@@ -1,0 +1,10 @@
+# Kept inside the project rather than ~/.dbt so the whole thing travels with
+# the repo. nwsl_warehouse.py passes --profiles-dir pointing here.
+nwsl:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('NWSL_DW_PATH', '../nwsl_dw.duckdb') }}"
+      schema: dw
+      threads: 4

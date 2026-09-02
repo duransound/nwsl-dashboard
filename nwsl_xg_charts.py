@@ -35,11 +35,13 @@ from whatever data comes back; (2) exactly one story point per chart is
 highlighted in the palette's blue/red, everything else recedes to muted
 gray (previously every bar/point was colored, which is the "belt and
 suspenders" pattern the guidelines call out); (3) attempts to set
-Karla/Space Grotesk (matching the dashboard's typography), falling back to
-matplotlib's default sans-serif if those fonts aren't installed locally --
-this sandbox can't download font files (same network allowlist issue as
-the ASA API itself), so charts built here will show the fallback; running
-this on a machine with the fonts installed (e.g. after `pip install` of a
+Karla/Fraunces (matching the dashboard's typography -- updated round 18,
+was Karla/Space Grotesk through round 17, see the Design Guidelines doc's
+round-12 typography unification), falling back to matplotlib's default
+sans-serif if those fonts aren't installed locally -- this sandbox can't
+download font files (same network allowlist issue as the ASA API itself),
+so charts built here will show the fallback; running this on a machine
+with the fonts installed (e.g. after `pip install` of a
 font-bundling package, or just having them in the OS font directory) will
 pick them up automatically, no code change needed.
 """
@@ -55,7 +57,10 @@ from matplotlib import font_manager as fm
 BASE_URL = "https://app.americansocceranalysis.com/api/v1/nwsl"
 
 # ---- validated chart palette (see Anthropic dataviz skill / references/palette.md) ----
-COLOR_BLUE = "#2a78d6"      # positive / series 1
+# Round 20: positive/series-1 unified with the brand's Amber (was blue
+# #2a78d6), matching dashboard_template.py and build_xg_xa_chart.py --
+# renamed COLOR_BLUE -> COLOR_ACCENT since the name would otherwise lie.
+COLOR_ACCENT = "#C98A2E"    # positive / series 1 (brand Amber)
 COLOR_RED = "#e34948"       # negative / series 8
 COLOR_MUTED = "#898781"     # axis / muted labels
 COLOR_MUTED_FILL = "#c3c2b7"  # muted / de-emphasized marks (bars, points)
@@ -64,7 +69,7 @@ COLOR_BASELINE = "#c3c2b7"  # zero line / axis line
 COLOR_INK = "#0b0b0b"       # primary text
 COLOR_SURFACE = "#fcfcfb"   # chart background
 
-# Best-effort Karla/Space Grotesk, matching the dashboard's typography system.
+# Best-effort Karla/Fraunces, matching the dashboard's typography system.
 # Resolved ONCE here (rather than left as a family list handed to every text
 # call) so a machine without these fonts installed falls back to DejaVu Sans
 # cleanly instead of matplotlib re-attempting and re-warning ("findfont: Font
@@ -75,7 +80,7 @@ COLOR_SURFACE = "#fcfcfb"   # chart background
 # pick them up automatically, no code change needed.
 _installed = {f.name for f in fm.fontManager.ttflist}
 FONT_BODY = "Karla" if "Karla" in _installed else "DejaVu Sans"
-FONT_HEAD = "Space Grotesk" if "Space Grotesk" in _installed else "DejaVu Sans"
+FONT_HEAD = "Fraunces" if "Fraunces" in _installed else "DejaVu Sans"
 plt.rcParams["font.family"] = FONT_BODY
 
 
@@ -90,6 +95,15 @@ def _style_axes(ax):
 def _title(ax, text):
     ax.set_title(text, color=COLOR_INK, fontsize=13, loc="left", fontweight="bold",
                  fontfamily=FONT_HEAD, wrap=True)
+
+
+def _credit(fig):
+    """Bottom-right source credit, same wording/placement convention as the
+    interactive dashboard's page-footer (dashboard_template.py) -- these
+    matplotlib PNGs are a separate rendering path with no shared HTML
+    template to inherit that footer from, so it's added explicitly here."""
+    fig.text(0.99, 0.01, "Data: American Soccer Analysis (americansocceranalysis.com)",
+              ha="right", va="bottom", fontsize=7.5, color=COLOR_MUTED, fontfamily=FONT_BODY)
 
 
 def fetch(endpoint: str, **params) -> pd.DataFrame:
@@ -125,7 +139,7 @@ def chart_team_xg_differential(team_df: pd.DataFrame, season: str, outfile: str)
     def bar_color(row):
         if row["team_abbreviation"] != extreme["team_abbreviation"]:
             return COLOR_MUTED_FILL
-        return COLOR_RED if row["xgoal_difference"] < 0 else COLOR_BLUE
+        return COLOR_RED if row["xgoal_difference"] < 0 else COLOR_ACCENT
 
     colors = [bar_color(row) for _, row in df.iterrows()]
 
@@ -154,10 +168,16 @@ def chart_team_xg_differential(team_df: pd.DataFrame, season: str, outfile: str)
         x, ha = extreme["xgoal_difference"] + inward, "left"
     else:
         x, ha = extreme["xgoal_difference"] - inward, "right"
+    # Round 20: label color now follows the same sign check as bar_color()
+    # above -- white reads fine on red, but white on the new Amber accent
+    # fails WCAG contrast (roughly 2.9:1, well under the 4.5:1 minimum for
+    # normal-size text), so the positive case switches to dark ink instead.
+    label_color = "white" if extreme["xgoal_difference"] < 0 else COLOR_INK
     ax.text(x, extreme["team_abbreviation"], f"{extreme['xgoal_difference']:+.1f} xG",
-            ha=ha, va="center", fontsize=10, fontweight="bold", color="white", fontfamily=FONT_BODY)
+            ha=ha, va="center", fontsize=10, fontweight="bold", color=label_color, fontfamily=FONT_BODY)
 
     fig.tight_layout()
+    _credit(fig)
     fig.savefig(outfile, dpi=200)
     plt.close(fig)
 
@@ -174,7 +194,7 @@ def chart_team_xgf_vs_xga(team_df: pd.DataFrame, season: str, outfile: str):
     best = df.loc[best_idx]
     title = f"{best['team_name']} is the strongest team on both sides of the ball"
 
-    colors = [COLOR_BLUE if i == best_idx else COLOR_MUTED_FILL for i in df.index]
+    colors = [COLOR_ACCENT if i == best_idx else COLOR_MUTED_FILL for i in df.index]
 
     fig, ax = plt.subplots(figsize=(7, 7), facecolor=COLOR_SURFACE)
     _style_axes(ax)
@@ -198,6 +218,7 @@ def chart_team_xgf_vs_xga(team_df: pd.DataFrame, season: str, outfile: str):
     _title(ax, title)
     ax.grid(color=COLOR_GRID, linewidth=0.8)
     fig.tight_layout()
+    _credit(fig)
     fig.savefig(outfile, dpi=200)
     plt.close(fig)
 
@@ -217,7 +238,7 @@ def chart_player_goals_vs_xg(player_df: pd.DataFrame, season: str, outfile: str,
         if idx != extreme_idx:
             colors.append(COLOR_MUTED_FILL)
         else:
-            colors.append(COLOR_RED if row["diff"] > 0 else COLOR_BLUE)
+            colors.append(COLOR_RED if row["diff"] > 0 else COLOR_ACCENT)
 
     fig, ax = plt.subplots(figsize=(7.5, 7.5), facecolor=COLOR_SURFACE)
     _style_axes(ax)
@@ -248,6 +269,7 @@ def chart_player_goals_vs_xg(player_df: pd.DataFrame, season: str, outfile: str,
     _title(ax, title)
     ax.grid(color=COLOR_GRID, linewidth=0.8)
     fig.tight_layout()
+    _credit(fig)
     fig.savefig(outfile, dpi=200)
     plt.close(fig)
 

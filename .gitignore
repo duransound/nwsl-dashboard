@@ -4,3 +4,24 @@ __pycache__/
 *.pyc
 history/
 weekly_update.log
+
+# Warehouse build artifacts (rebuildable from raw_snapshots/)
+nwsl_dw.duckdb
+nwsl_dw.duckdb.wal
+raw_snapshots/
+
+# dbt build artifacts
+dbt/target/
+dbt/logs/
+dbt/.user.yml
+
+# dbt lives in its own venv (setup_dbt.sh)
+.venv-dbt/
+dbt_setup.log
+warehouse_run.log
+
+# Local build artifacts and scratch -- index.html is the published copy
+dashboard.html
+_mock_dashboard.html
+probe_report.txt
+_to_delete/

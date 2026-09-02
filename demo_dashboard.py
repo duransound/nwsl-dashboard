@@ -68,9 +68,12 @@ minutes_played; the reliable fix is still running build_dashboard.py
 locally against the live API).
 """
 
+import datetime as _dt
+
 from chart_builders import (
-    build_finishing_creation_shotquality, build_story_lede, build_team_charts,
-    build_team_compare_chart, build_team_goals_added_chart, per96,
+    build_finishing_creation_shotquality, build_methods_chart, build_story_lede,
+    build_team_charts, build_team_compare_chart, build_team_goals_added_chart,
+    per96, rows_to_csv,
 )
 from dashboard_template import render_dashboard
 
@@ -315,13 +318,57 @@ _charts = [
     chart_finishing, chart_creation, chart_goals_added, chart_goalkeepers,
     chart_team_compare,
 ]
+
+
+# Methods tab (round 22). The demo has no shot-pattern split and no Open Play
+# vs. Set Pieces tab -- it's a hand-verified snapshot of aggregate rows, not a
+# live API build -- so it says so here rather than inheriting the live build's
+# claims about penalties. A methods tab that describes a different build than
+# the one you're reading is worse than none at all.
+_generated_at = _dt.datetime.now().astimezone().strftime("%d %B %Y, %H:%M %Z")
+_signal = (chart_finishing.get("meta") or {}).get("signal")
+_charts.append(build_methods_chart(
+    season="2026", generated_at=_generated_at, minimum_minutes=500,
+    signal=_signal, pens_excluded=False,
+    source_note=(
+        "American Soccer Analysis, but via a hand-verified static snapshot embedded in "
+        "demo_dashboard.py rather than a live API call — this build exists so the page can be "
+        "regenerated and design-checked without network access. Figures are real but frozen, and "
+        "the player pool is a ~20-player sample, not the full league."
+    ),
+    downloads=[{
+        "label": "Player finishing (demo sample)",
+        "filename": "nwsl_2026_finishing_demo.csv",
+        "csv": rows_to_csv(chart_finishing["table"]["rows"],
+                           [(c["key"], c["label"]) for c in chart_finishing["table"]["columns"]]),
+    }],
+    extra_sections=[{
+        "heading": "This is the demo build, not the live one",
+        "items": [
+            {"term": "Player pool",
+             "detail": "About 20 hand-verified players, not the full qualifying league. Any "
+                       "'league-wide' phrasing on the charts describes this sample."},
+            {"term": "Penalties",
+             "detail": "Included, because the snapshot has no shot-pattern breakdown to subtract. "
+                       "The live build excludes them."},
+            {"term": "Missing tabs",
+             "detail": "Open Play vs. Set Pieces, MVP Tracker and Position Gaps need live "
+                       "endpoints and are absent here."},
+            {"term": "Goalkeepers",
+             "detail": "Shown as raw shots faced rather than per 96, because per-keeper minutes "
+                       "were never independently verified for this snapshot."},
+        ],
+    }],
+))
+
 _story = build_story_lede(_charts)
 
 html = render_dashboard(
     title="NWSL 2026 Analytics Dashboard",
-    subtitle="Team and player xG stats from the American Soccer Analysis API — each tab leads with the finding, not just the metric. Demo build; see footnotes for exact scope.",
+    subtitle="Team and player xG stats from the American Soccer Analysis API — each tab leads with the finding, not just the metric. Demo build; see the Methods & Data tab for exact scope.",
     charts=_charts,
     story=_story,
+    generated_at=_generated_at,
 )
 with open("dashboard_demo.html", "w") as f:
     f.write(html)

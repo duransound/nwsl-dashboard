@@ -1,0 +1,35 @@
+version: 2
+
+sources:
+  - name: raw
+    description: >
+      The landing zone. Written only by nwsl_warehouse.py, never by dbt --
+      append-only, JSON kept exactly as the ASA API sent it. Everything
+      downstream is a view over these two tables.
+    schema: raw
+    tables:
+      - name: asa_records
+        description: One row per record returned by the API, tagged with the load and endpoint that produced it.
+        columns:
+          - name: load_id
+            tests: [not_null]
+          - name: endpoint
+            tests:
+              - not_null
+              - accepted_values:
+                  arguments:
+                    values: ['teams', 'players', 'teams/xgoals', 'teams/goals-added',
+                             'players/xgoals', 'players/goals-added', 'goalkeepers/xgoals']
+          - name: record
+            tests: [not_null]
+      - name: loads
+        description: One row per run of the loader. finished_at is stamped only on success.
+        columns:
+          - name: load_id
+            tests: [unique, not_null]
+
+  - name: dw_settings
+    schema: dw
+    tables:
+      - name: settings
+        description: Run parameters written by the loader, so thresholds are not hardcoded in SQL.

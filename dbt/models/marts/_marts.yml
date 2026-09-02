@@ -1,0 +1,78 @@
+version: 2
+
+models:
+  - name: dim_team
+    description: "Grain: one team per season. Survives a /teams outage -- built from the ids in the stats, name left-joined."
+    columns:
+      - name: "season || '-' || team_id"
+        tests: [unique, not_null]
+      - name: team_abbr
+        tests: [not_null]
+
+  - name: dim_player
+    description: "Grain: one player per season."
+    columns:
+      - name: "season || '-' || player_id"
+        tests: [unique, not_null]
+
+  - name: fct_team_season
+    description: "Grain: one team per season, all shot patterns."
+    columns:
+      - name: "season || '-' || team_id"
+        tests: [unique, not_null]
+      - name: xgoals_for
+        tests: [not_null]
+      - name: team_id
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_team')
+                field: team_id
+
+  - name: fct_player_season
+    description: "Grain: one player per season, with npxG derived from the penalty call."
+    columns:
+      - name: "season || '-' || player_id"
+        tests: [unique, not_null]
+      - name: minutes
+        tests: [not_null]
+      - name: npxg
+        tests: [not_null]
+      - name: team_count
+        tests: [not_null]
+
+  - name: fct_player_team_season
+    description: "Grain: one player PER TEAM per season. Splits for movers, single rows for everyone else."
+    columns:
+      - name: "season || '-' || player_id || '-' || team_id"
+        tests: [unique, not_null]
+
+  - name: mart_primary_team
+    description: "The club a player played the most minutes for -- what goes on their badge."
+    columns:
+      - name: "season || '-' || player_id"
+        tests: [unique, not_null]
+
+  - name: mart_qualification
+    description: "The games-scaled minutes bar, per team."
+    columns:
+      - name: minutes_required
+        tests: [not_null]
+
+  - name: mart_player_rates
+    description: "Per-96 rates and the qualification flag. The model every player scatter reads."
+    columns:
+      - name: "season || '-' || player_id"
+        tests: [unique, not_null]
+      - name: team_abbr
+        tests: [not_null]
+      - name: qualified
+        tests: [not_null]
+
+  - name: mart_goalkeepers
+    columns:
+      - name: "season || '-' || player_id"
+        tests: [unique, not_null]
+
+  - name: params
+    description: "Exactly one row, always -- it is cross-joined into the qualification rule."

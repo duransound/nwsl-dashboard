@@ -32,16 +32,27 @@ if (Test-Path ".venv\Scripts\Activate.ps1") {
 }
 
 $Season = if ($env:NWSL_SEASON) { $env:NWSL_SEASON } else { "2026" }
-$Minutes = if ($env:NWSL_MIN_MINUTES) { $env:NWSL_MIN_MINUTES } else { "500" }
+# Minutes qualification is now derived from games played rather than being a
+# fixed number (round 22): a player must average MinPerGame minutes per game
+# THEIR TEAM has played. 30 is FBref's per-90-leaderboard convention; 45 is
+# starters-only; 20 is more inclusive. See qualification.py. Set
+# NWSL_MIN_MINUTES to fall back to a flat league-wide floor instead.
+$MinPerGame = if ($env:NWSL_MIN_PER_GAME) { $env:NWSL_MIN_PER_GAME } else { "30" }
+$FlatMinutes = $env:NWSL_MIN_MINUTES
 # TopN now controls only the Goals Added leaderboard bar chart's length --
 # the scatter charts (Goals vs. xG, xG vs. xA, Shot Quality, Playmaking
-# Style) always plot every player above Minutes, full league, regardless of
+# Style) always plot every qualifying player, full league, regardless of
 # this value (round 13, see build_dashboard.py's docstring).
 $TopN = if ($env:NWSL_TOP_N) { $env:NWSL_TOP_N } else { "20" }
 $Timestamp = Get-Date -Format "yyyy-MM-dd"
 
-Write-Host "[$Timestamp] Refreshing NWSL dashboard (season=$Season, minutes=$Minutes, top_n=$TopN)..."
-python build_dashboard.py --season $Season --minutes $Minutes --top-n $TopN --out dashboard.html
+if ($FlatMinutes) {
+    Write-Host "[$Timestamp] Refreshing NWSL dashboard (season=$Season, FLAT minutes=$FlatMinutes, top_n=$TopN)..."
+    python build_dashboard.py --season $Season --minutes $FlatMinutes --top-n $TopN --out dashboard.html
+} else {
+    Write-Host "[$Timestamp] Refreshing NWSL dashboard (season=$Season, min $MinPerGame min per team game played, top_n=$TopN)..."
+    python build_dashboard.py --season $Season --minutes-per-game $MinPerGame --top-n $TopN --out dashboard.html
+}
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[$Timestamp] ERROR: build_dashboard.py failed (exit $LASTEXITCODE) -- stopping before touching history/ or git."
     exit 1

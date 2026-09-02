@@ -1,0 +1,31 @@
+# ---------------------------------------------------------------------------
+# NWSL analytics warehouse -- the transform half.
+#
+# nwsl_warehouse.py still owns extract and load: it calls the ASA API and
+# lands raw JSON in raw.asa_records. dbt owns everything after that. This is
+# the split a club's stack will already be using ("EL" and "T" as separate
+# tools), and it is the reason the loader stays boring while the modelling
+# gets version control, tests, lineage and docs.
+#
+#   dbt build     run every model, then every test
+#   dbt test      tests only
+#   dbt docs generate && dbt docs serve    the lineage graph
+# ---------------------------------------------------------------------------
+name: nwsl
+version: "1.0.0"
+config-version: 2
+profile: nwsl
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  nwsl:
+    +materialized: view
+    staging:
+      +schema: stg
+    marts:
+      +schema: dw

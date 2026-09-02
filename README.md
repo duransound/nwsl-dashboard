@@ -1,5 +1,7 @@
 # NWSL xG Starter Kit
 
+[![Weekly NWSL refresh](https://github.com/duransound/nwsl-dashboard/actions/workflows/weekly.yml/badge.svg)](https://github.com/duransound/nwsl-dashboard/actions/workflows/weekly.yml)
+
 A minimal, working starting point for building xG (Expected Goals) charts from
 [American Soccer Analysis](https://www.americansocceranalysis.com/) data — the
 same public API that powers ASA's own site and the `itscalledsoccer` R/Python
@@ -31,6 +33,14 @@ rather than presented as equally-weighted views.
 - **`demo_xg_xa.py` / `xg_xa_chart_demo.html`** — same chart, built from a
   hand-verified snapshot of the top 20 players by combined xG+xA (2026 season,
   500+ minute qualifiers), for the same sandbox-network-access reason as above.
+- **`finishing_signal.py`** — the uncertainty and regression-to-the-mean
+  math behind the Goals vs. xG tab: how far chance alone can push a player
+  from their xG, and how much of an observed gap the shot volume can actually
+  support. No network, no ASA specifics — plain numbers in, plain numbers out.
+- **`test_finishing_signal.py`** — assertion tests for the above. Run with
+  `python3 test_finishing_signal.py` (no pytest, no network). Worth running
+  after any change to the stats: a wrong band renders exactly like a right
+  one, so the page cannot tell you it's broken.
 - **`dashboard_template.py`** — the shared chart library (bar + scatter, tabs,
   tooltips, collision-avoidance) used by every HTML chart. No external
   dependencies (see "why no D3" below).
@@ -365,6 +375,101 @@ going to sources ASA's API simply doesn't have.
   step (see "Where to go next") once there's a decision on where they fit
   in the "what is → what could be" sequencing rule.
 
+## Round 22: penalties out, uncertainty in, and a Methods tab (2026-08-13)
+
+Prompted by asking what an elite sports-data analyst would say the dashboard
+was missing. The answer was not "more charts" — it was that every number on
+the page was a bare point estimate from one model, with no statement of how
+much of it was chance and no way for a reader to check any of it. Three
+changes, in order of how much they move the needle.
+
+### 1. Penalties are out of every finishing figure (npxG)
+
+A penalty is roughly 0.75 xG and it goes to whoever the team designates, not
+to whoever finishes well. Any finishing or shot-quality ranking that leaves
+them in is partly a ranking of who takes penalties.
+
+ASA doesn't publish an npxG field, but `/players/xgoals` and `/teams/xgoals`
+accept a `shot_pattern` filter, so the penalty component is obtainable by
+asking the same endpoint the same question with `shot_pattern=Penalty` and
+subtracting — one extra call, not one per player. Goals vs. xG, Shot Quality
+and the xG axis of xG vs. xA are all non-penalty now.
+
+The six patterns (`Regular`, `Fastbreak`, `Corner`, `Free kick`, `Set piece`,
+`Penalty`) are mutually exclusive and exhaustive. Verified live on 2026-08-13
+for one team: the six filtered calls summed to exactly the unfiltered row
+(235 shots / 25.3197 xG = Regular 170/17.4848 + Corner 42/3.4250 +
+Fastbreak 10/1.6420 + Set piece 7/0.3195 + Free kick 3/0.1693 +
+Penalty 3/2.2793). That identity is what makes open play derivable as
+"total minus dead balls minus penalties", which is how the new tab below
+gets away with four extra calls instead of six.
+
+### 2. A chance band and a regressed estimate on Goals vs. xG
+
+Finishing over expectation is one of the slowest-stabilising quantities in
+the sport. Over a partial season most players' over- or under-performance is
+indistinguishable from a league-average finisher having a good or bad run,
+and the old chart rendered those two cases identically — then wrote a
+headline about whoever's raw margin was largest, which is a machine for
+generating findings that regress the following month.
+
+Now:
+
+- **The shaded ribbon** is where a perfectly average finisher lands 95% of
+  the time given that many shots at that quality. Inside it, a gap is not
+  distinguishable from luck.
+- **`± chance` and `z`** in the table give each player's own exact interval,
+  rather than one read off the ribbon.
+- **`Regressed`** is an empirical-Bayes estimate: the raw margin times the
+  share of it the shot volume can support. The population variance of true
+  finishing skill is *estimated from the pool* by shot-weighted method of
+  moments, so the strength of the regression is measured, not chosen. On the
+  demo snapshot it comes out at exactly zero — the spread across those 20
+  players is fully explained by the randomness of 802 shots — and the tab
+  says so in its headline instead of crowning the luckiest player.
+- **The story point is the largest regressed margin**, not the largest raw
+  one.
+
+**This tab is now in season totals, not per-96** — a deliberate exception to
+the per-96 convention from rounds 6 and 9, made for a specific reason. Goals
+minus xG is not a rate; it is an accumulation whose reliability is the point,
+and the noise in it depends on shots taken, not on minutes. In count space
+the band is exact for every player at once. On a per-96 axis it could only
+ever be drawn for one representative player — precisely the "roughly right
+for somebody" this round exists to remove. Rate views of the same players
+still live on xG vs. xA, Shot Quality and Compare Teammates.
+
+### 3. Open Play vs. Set Pieces, and a Methods & Data tab
+
+**Open Play vs. Set Pieces** splits team xG by how the chance began. League
+Picture and Team xG Diff. are all-situations, which conflates two different
+things: dead-ball output comes from a handful of rehearsed routines and
+swings hard season to season, while open-play xG is the more stable read on
+how a side actually plays. The story point is the team whose open-play rank
+and dead-ball rank disagree most — a side propped up by set pieces is a
+likelier regression candidate than the same record built in open play.
+
+**Methods & Data** is the tab that makes the rest checkable: which xG model
+(and a warning that ASA's numbers will not reconcile with Opta- or
+FBref-derived ones), which endpoints, every filter and threshold, what each
+derived quantity means, the regression strength actually used in this
+build, an explicit list of known limitations, a build timestamp, and CSV
+exports of the underlying rows. The CSVs are embedded in the page and
+offered via a Blob, so they work on a static host with no backend and keep
+working offline.
+
+Every page now carries a **"Built <date>"** stamp in the footer.
+
+### Known limitations, stated rather than hidden
+
+The Methods tab lists these on the page, and they are the honest next round:
+nothing is adjusted for score state, venue or opponent strength (ASA's
+`/teams/xgoals` exposes `home_adjusted` and `even_game_state` flags this
+build doesn't use yet); everything is a season aggregate with no rolling form
+window or match-by-match series; player scatters put every position on shared
+axes without position-relative percentiles; and there is no second xG source
+to triangulate against.
+
 ## Automating the weekly refresh
 
 `build_dashboard.py` already pulls **live** data — the only reason it wasn't
@@ -609,3 +714,35 @@ network access (only an allowlist of package registries), so it couldn't call
 The preview PNGs were built from a small hand-verified data snapshot instead.
 Your own machine won't have that restriction — `nwsl_xg_charts.py` will pull
 live data normally.
+
+
+## Weekly automation on GitHub Actions
+
+`.github/workflows/weekly.yml` runs the refresh every Tuesday at 15:00 UTC,
+and on demand from the Actions tab. It replaces the local cron job, which
+only fired if the laptop happened to be awake.
+
+The order of its steps is the contract:
+
+1. **Unit tests** against the synthetic season — if these fail the problem is
+   the code, not the league, and no API call is spent finding that out.
+2. **Warehouse load** — pull the live API into `raw`, then `dbt build`: 23
+   models and 41 data tests, in dependency order.
+3. **Dashboard rebuild** — only reached if every data test passed.
+4. **Publish** — `index.html` committed back to the repo for GitHub Pages.
+
+A failing data test stops the job at step 2. The dashboard is not rebuilt,
+`index.html` is not touched, and the live site keeps serving last week's
+numbers: stale and correct rather than fresh and wrong. Each run also uploads
+its raw API payloads and dbt's `run_results.json` as artifacts, kept 90 days —
+so any week's numbers can be re-examined later, by anyone, without taking the
+maintainer's word for it.
+
+**Turn off the local cron once this is running.** Two publishers pushing
+`index.html` to the same branch will collide. In your own Terminal:
+
+    crontab -l                 # note the NWSL lines
+    crontab -e                 # delete or comment the run_weekly_update.sh line
+
+`run_weekly_update.sh` still works for manual local runs; it just should not
+be scheduled at the same time as the workflow.
