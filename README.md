@@ -18,7 +18,7 @@ numbers standing rather than half of today's.
 |---|---|
 | **[Dashboard →](https://duransound.github.io/nwsl-dashboard/)** | 15 tabs, running from the league-wide picture down to individual finishing. Rebuilt every Tuesday by GitHub Actions. One self-contained HTML file — no server, no build step, no JavaScript dependencies. |
 | **[Tableau Public →](https://public.tableau.com/app/profile/ian.duran/viz/nwsl-xg-difference/Placementvs_Luck)** | Three sheets off the same warehouse extracts: team xG difference, the league xGF/xGA quadrant, and Placement vs. Luck. |
-| **Shiny app** | [`shiny/`](shiny/) — every threshold the dashboard bakes in at build time, handed to the reader as a control instead. Deploying to `https://ianduran.shinyapps.io/nwsl-finishing-explorer/`; this row becomes a link once it is up. |
+| **[Shiny app →](https://ianduran.shinyapps.io/nwsl-finishing-explorer/)** | The thresholds the dashboard bakes in at build time — the qualification bar, the shot floor — handed to the reader as controls, with the pool re-derived live from the ASA API on every change. Source in [`shiny/`](shiny/). |
 
 ## What's underneath
 

@@ -1,0 +1,10 @@
+name: nwsl-finishing-explorer
+title:
+username: ianduran
+account: ianduran
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 17812831
+bundleId: 12500076
+url: https://ianduran.shinyapps.io/nwsl-finishing-explorer/
+version: 1
