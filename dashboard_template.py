@@ -633,8 +633,14 @@ function drawScatter(container, cfg) {{
     }}
 
     if (cfg.refLine) {{
-      const lim = Math.min(xMax, yMax);
-      g.appendChild(el("line", {{class: "refline", x1: xScale(0), y1: yScale(0), x2: xScale(lim), y2: yScale(lim)}}));
+      // y = x, across whatever part of it both axes actually show. Charts
+      // with zeroOrigin (the finishing scatter) get exactly the old behaviour,
+      // since their scale minimums are both 0; charts whose axes run negative
+      // (Placement vs. Luck) get the line through the negative quadrant too,
+      // instead of it starting abruptly at the origin.
+      const lo = Math.max(xScaleMin, yScaleMin);
+      const hi = Math.min(xScaleMax, yScaleMax);
+      g.appendChild(el("line", {{class: "refline", x1: xScale(lo), y1: yScale(lo), x2: xScale(hi), y2: yScale(hi)}}));
     }}
     if (cfg.medianLines) {{
       const medX = data.map(d => d.x).sort((a,b) => a-b)[Math.floor(data.length / 2)];

@@ -18,6 +18,8 @@ select
     q.games_imputed,
     f.goals, f.shots, f.xgoals, f.xassists, f.xplace,
     f.npxg, f.np_goals, f.np_shots,
+    f.np_xplace,
+    f.finishing_residual,
     f.goals    / nullif(f.minutes, 0) * 96 as goals96,
     f.shots    / nullif(f.minutes, 0) * 96 as shots96,
     f.xgoals   / nullif(f.minutes, 0) * 96 as xg96,

@@ -196,7 +196,22 @@ SELECT
     COALESCE(pen.xgoals, 0) AS pen_xgoals,
     GREATEST(a.goals  - COALESCE(pen.goals,  0), 0) AS np_goals,
     GREATEST(a.shots  - COALESCE(pen.shots,  0), 0) AS np_shots,
-    GREATEST(a.xgoals - COALESCE(pen.xgoals, 0), 0) AS npxg
+    GREATEST(a.xgoals - COALESCE(pen.xgoals, 0), 0) AS npxg,
+    a.xplace,
+    coalesce(pen.xplace, 0) as pen_xplace,
+    a.xplace - coalesce(pen.xplace, 0) as np_xplace,
+    -- Finishing split into its two halves (round 31). Placement is the
+    -- goals-worth of where the shots ended up; the residual is everything it
+    -- does not explain -- keeper, deflections, luck. They sum to the margin by
+    -- construction, which assert_placement_components_sum keeps true.
+    -- Both sides clamped exactly as np_goals and npxg are. Leaving the
+    -- goals term unclamped is what assert_placement_components_sum caught on
+    -- its first run: eight fixture players whose penalty goals exceeded their
+    -- total, where the residual then disagreed with the margin it is supposed
+    -- to complete.
+    greatest(a.goals - coalesce(pen.goals, 0), 0)
+        - greatest(a.xgoals - coalesce(pen.xgoals, 0), 0)
+        - (a.xplace - coalesce(pen.xplace, 0)) as finishing_residual
 FROM       stg.player_xgoals a
 LEFT JOIN  stg.player_xgoals pen
        ON  pen.season    = a.season
@@ -325,6 +340,8 @@ SELECT
     f.npxg,
     f.np_goals,
     f.np_shots,
+    f.np_xplace,
+    f.finishing_residual,
     f.goals    / NULLIF(f.minutes, 0) * 96 AS goals96,
     f.shots    / NULLIF(f.minutes, 0) * 96 AS shots96,
     f.xgoals   / NULLIF(f.minutes, 0) * 96 AS xg96,

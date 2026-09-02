@@ -60,7 +60,7 @@ import requests
 import chart_builders
 from chart_builders import (
     build_finishing_creation_shotquality, build_methods_chart, build_mvp_chart,
-    build_position_gap_chart, build_set_piece_chart, build_story_lede,
+    build_placement_chart, build_position_gap_chart, build_set_piece_chart, build_story_lede,
     build_team_charts, build_team_compare_chart, build_team_goals_added_chart,
     per96, rows_to_csv, scatter_display_params,
 )
@@ -235,6 +235,10 @@ def fetch_penalty_totals(season, minimum_minutes):
             "shots": r.get("shots", 0) or 0,
             "goals": r.get("goals", 0) or 0,
             "xg": r.get("xgoals", 0.0) or 0.0,
+            # Round 31: the placement component of the penalties, so the
+            # Placement vs. Luck tab can strip them out of both sides of its
+            # split the same way every other finishing view does.
+            "xplace": r.get("xplace", 0.0) or 0.0,
         }
     return out
 
@@ -272,7 +276,7 @@ def fetch_player_pool(season, qual, teams, players):
         # a fresh live read to confirm which (the API's robots.txt check was
         # timing out when this was fixed), so defensive beats a guess here.
         minutes = r.get("minutes_played", r.get("minutes", 0))
-        pen = pens.get(r["player_id"], {"shots": 0, "goals": 0, "xg": 0.0})
+        pen = pens.get(r["player_id"], {"shots": 0, "goals": 0, "xg": 0.0, "xplace": 0.0})
         # max(..., 0) guards the one way this subtraction can go wrong: the two
         # calls are independent snapshots, so a match finishing between them
         # could leave a penalty in the filtered total that isn't in the
@@ -287,6 +291,10 @@ def fetch_player_pool(season, qual, teams, players):
             "npgoals": max(r["goals"] - pen["goals"], 0),
             "npshots": max(r.get("shots", 0) - pen["shots"], 0),
             "pen_shots": pen["shots"], "pen_goals": pen["goals"], "pen_xg": pen["xg"],
+            # Round 31. ASA never documents this field; see
+            # chart_builders.build_placement_chart for what it is taken to mean
+            # and the reconciliation that supports the reading.
+            "xplace": r.get("xplace"), "pen_xplace": pen.get("xplace", 0.0),
         })
     # The client-side half of the rule -- see the docstring. Done after the
     # row is assembled because `team` isn't known until team_id is unwrapped.
@@ -678,7 +686,16 @@ def main():
     if chart_shot_quality:
         charts.append(chart_shot_quality)
     charts.append(chart_playmaking)
-    charts += [chart_finishing, chart_creation, chart_goals_added]
+    charts += [chart_finishing]
+    # Placement vs. Luck sits immediately after Finishing on purpose: it is the
+    # follow-up question to the tab before it ("of that margin, how much is
+    # placement?"), and the "what is -> what could be" sequencing rule in the
+    # Design Guidelines wants the answer next to the claim it qualifies.
+    chart_placement = build_placement_chart(player_pool, minimum_minutes=qual)
+    if chart_placement:
+        charts.append(chart_placement)
+        print(f"  Placement vs. Luck: {len(chart_placement['data'])} players plotted")
+    charts += [chart_creation, chart_goals_added]
     if chart_goalkeepers:
         charts.append(chart_goalkeepers)
     charts.append(chart_team_compare)

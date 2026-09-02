@@ -29,7 +29,22 @@ select
     coalesce(pen.xgoals, 0) as pen_xgoals,
     greatest(a.goals  - coalesce(pen.goals,  0), 0) as np_goals,
     greatest(a.shots  - coalesce(pen.shots,  0), 0) as np_shots,
-    greatest(a.xgoals - coalesce(pen.xgoals, 0), 0) as npxg
+    greatest(a.xgoals - coalesce(pen.xgoals, 0), 0) as npxg,
+    a.xplace,
+    coalesce(pen.xplace, 0) as pen_xplace,
+    a.xplace - coalesce(pen.xplace, 0) as np_xplace,
+    -- Finishing split into its two halves (round 31). Placement is the
+    -- goals-worth of where the shots ended up; the residual is everything it
+    -- does not explain -- keeper, deflections, luck. They sum to the margin by
+    -- construction, which assert_placement_components_sum keeps true.
+    -- Both sides clamped exactly as np_goals and npxg are. Leaving the
+    -- goals term unclamped is what assert_placement_components_sum caught on
+    -- its first run: eight fixture players whose penalty goals exceeded their
+    -- total, where the residual then disagreed with the margin it is supposed
+    -- to complete.
+    greatest(a.goals - coalesce(pen.goals, 0), 0)
+        - greatest(a.xgoals - coalesce(pen.xgoals, 0), 0)
+        - (a.xplace - coalesce(pen.xplace, 0)) as finishing_residual
 from {{ ref('stg_player_xgoals') }} a
 left join {{ ref('stg_player_xgoals') }} pen
        on pen.season = a.season and pen.player_id = a.player_id and pen.variant = 'Penalty'

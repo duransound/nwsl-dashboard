@@ -1063,3 +1063,221 @@ def rows_to_csv(rows, columns):
     for r in rows:
         out.append(",".join(esc(r.get(k)) for k, _ in columns))
     return "\n".join(out)
+
+
+# --------------------------------------------------------------------------
+# build_placement_chart (round 31)
+#
+# build_placement_chart -- splitting finishing into placement and everything else.
+#
+# Appended to chart_builders.py. Kept in its own file here only so it can be
+# developed and screenshotted against real payloads before being merged in.
+#
+# THE QUESTION THIS TAB ANSWERS
+#
+# The Finishing tab already says who is scoring more than their chances
+# deserved, and how much of that gap survives a chance band. It cannot say
+# *why*. A player beats their xG for exactly two reasons: they put the ball in
+# better places than an average shooter would from those spots, or everything
+# else broke their way -- a keeper error, a deflection, a post that went in
+# instead of out.
+#
+# ASA publishes a field that separates them, and almost nobody uses it.
+#
+# WHAT xplace IS, AND WHAT IS ACTUALLY KNOWN ABOUT IT
+#
+# ASA's xGoals explanation documents goal-mouth placement as a model input --
+# "the ball's height and distance from the center of the goal mouth ... helps
+# rate keepers' abilities to make difficult saves, as well as identify
+# shooters' placement tendencies" -- but nowhere on their site, in the API
+# docs, or in the itscalledsoccer wrappers is the `xplace` FIELD defined. So
+# its meaning is inferred, and the inference is stated here rather than
+# assumed silently.
+#
+# The evidence, all from the 2026 payload this dashboard already pulls:
+#
+#   * league totals, qualifying pool:  goals 443.00, xgoals 475.92
+#         goals - xgoals            = -32.92
+#         goals - (xgoals + xplace) =  +8.80
+#     Adding xplace cuts the gap between expected and actual by 73%. That is
+#     what a placement increment on a pre-shot model should do, and it is not
+#     what an unrelated quantity would do.
+#   * corr(xplace, goals - xgoals) = 0.57 across 227 shooters -- clearly
+#     related, clearly not the same thing, which is exactly the case for
+#     splitting them.
+#   * mean xplace per shot is -0.010, i.e. centred near zero. It behaves like
+#     an increment, not a level.
+#
+# Read as: xplace is the goals-worth of where a player's shots ended up in the
+# goal mouth, relative to an average placement from those same chances.
+#
+# WHY THE AXES ARE PLACEMENT AND MARGIN, NOT PLACEMENT AND RESIDUAL
+#
+# The obvious encoding is x = placement, y = residual, since those are the two
+# halves of the split. It is wrong, and the first draft of this chart used it.
+# Residual is DEFINED as margin minus placement, so for any group of players
+# with similar margins the two axes are anti-correlated by construction -- the
+# scatter shows a tidy downward slope that is pure arithmetic, and a reader
+# sensibly concludes that good placers get unlucky. They don't; the axes are
+# just not independent.
+#
+# Plotting margin on y fixes it. Both axes are then quantities measured
+# directly, the 45-degree line is "this player's whole margin is placement",
+# and the residual is the vertical distance from that line -- visible, but not
+# masquerading as a second independent variable.
+#
+# The residual is not a skill measure and is not presented as one. The chance
+# band from finishing_signal is quoted alongside it so a reader can see how
+# much of any gap is simply noise.
+# --------------------------------------------------------------------------
+def build_placement_chart(player_rows, minimum_minutes=500, min_shots=10, min_margin=1.5):
+    """player_rows: the same dicts build_finishing_creation_shotquality takes,
+    plus `xplace` and (optionally) `pen_xplace`.
+
+    Returns a scatter chart dict, or None if no player clears the cuts or the
+    pool carries no xplace at all (the demo snapshot does not).
+
+    `min_margin` is the one editorial cut on this tab, and it is deliberate.
+    Every other scatter here plots the full qualifying pool, because showing
+    everyone is usually the honest default. It is the wrong default here: this
+    chart exists to explain overperformance, and 100+ players sitting within a
+    goal of their expectation are not overperforming -- they are a cloud that
+    buries the handful of players the tab is about. 1.5 goals of margin is the
+    line for "worth decomposing".
+    """
+    pool = [r for r in player_rows if r.get("xplace") is not None]
+    if not pool:
+        return None
+
+    # Same penalty treatment as every other finishing view (round 22). A
+    # penalty is ~0.75 xG and its placement says nothing about open-play
+    # finishing, so it comes out of both sides of the split -- otherwise this
+    # chart quietly ranks penalty takers, same trap as Shot Quality.
+    pens_excluded = any("npxg" in r for r in pool)
+    for r in pool:
+        r["fin_xg"] = r.get("npxg", r["xg"]) if pens_excluded else r["xg"]
+        r["fin_goals"] = r.get("npgoals", r["goals"]) if pens_excluded else r["goals"]
+        r["fin_shots"] = r.get("npshots", r.get("shots", 0)) if pens_excluded else r.get("shots", 0)
+        r["fin_place"] = (r["xplace"] - r.get("pen_xplace", 0.0)) if pens_excluded else r["xplace"]
+        r["gap"] = r["fin_goals"] - r["fin_xg"]
+        r["residual"] = r["gap"] - r["fin_place"]
+
+    table_pool = [r for r in pool if r["fin_shots"] >= min_shots]
+    eligible = len(table_pool)
+    pool = [r for r in table_pool if abs(r["gap"]) >= min_margin]
+    if not pool:
+        return None
+
+    # The chance band, borrowed from the Finishing tab so the two agree. It is
+    # the 95% margin on the WHOLE gap from shot volume alone -- quoted here so
+    # a reader can see that most residuals sit inside it.
+    signal = _fs.pool_summary(
+        [{"shots": r["fin_shots"], "xg": r["fin_xg"], "goals": r["fin_goals"],
+          "minutes": r["minutes"]} for r in table_pool])
+    for r in table_pool:
+        r["chance"] = _fs.Z95 * _fs.noise_sd(r["fin_xg"], r["fin_shots"])
+
+    n = len(pool)
+    radius, show_badges = scatter_display_params(n)
+    xg_word = "npxG" if pens_excluded else "xG"
+
+    # Story point: the league's biggest overperformer, i.e. whoever the
+    # Finishing tab is already pointing at. Anchoring on the same player is
+    # deliberate -- this tab exists to say something the other one cannot, and
+    # it is most useful when the two are looking at the same person.
+    top = max(pool, key=lambda r: r["gap"])
+    share = (top["fin_place"] / top["gap"]) if top["gap"] else 0.0
+    last = top["name"].split()[-1]
+
+    if share < 0.25:
+        title = (f"{top['name']} is the league's biggest overperformer, and almost none "
+                 f"of it is where she puts the ball")
+    elif share > 0.6:
+        title = (f"{top['name']} is beating her chances mostly by placing shots better "
+                 f"than anyone else")
+    else:
+        title = (f"About {round(share * 100)}% of {top['name']}'s finishing edge is shot "
+                 f"placement — the rest is everything else")
+
+    # Two supporting names for the blurb, computed rather than written, so the
+    # prose cannot drift out of date when the data moves.
+    best_placer = max(pool, key=lambda r: r["fin_place"])
+    unluckiest = min(pool, key=lambda r: r["residual"])
+
+    return {
+        "type": "scatter", "tabLabel": "Placement vs. Luck",
+        "metricLabel": f"{xg_word} overperformance, split into placement and everything else",
+        "title": title,
+        "blurb": (
+            f"The {n} players whose finishing margin is at least {min_margin} goals either way, out of "
+            f"{eligible} with {min_shots}+ non-penalty shots. A player beats their "
+            f"{xg_word} for two reasons, and this splits them. Right = they put the ball in better places than "
+            f"an average shooter would from those same chances. Up = the margin the Finishing tab plots. "
+            f"The diagonal is where the two are equal — a player sitting on it beat their chances purely by "
+            f"placing shots well. Vertical distance above the line is everything placement does not explain: "
+            f"keeper errors, deflections, posts. {best_placer['name']} places shots better than anyone "
+            f"({best_placer['fin_place']:+.1f} goals' worth); {unluckiest['name']} sits furthest below what "
+            f"her placement alone would predict ({unluckiest['residual']:+.1f})."
+        ),
+        "xAxisLabel": "Placement (goals added by where the shot went)",
+        "yAxisLabel": f"Finishing margin (goals above {xg_word})",
+        "refLine": True,
+        "radius": radius, "showBadges": show_badges,
+        "meta": {"pensExcluded": pens_excluded, "signal": signal,
+                 "minimumMinutes": qualification_phrase(minimum_minutes)},
+        "footnote": (
+            f"ASA documents goal-mouth placement as an input to its xG model but does not define the "
+            f"`xplace` field anywhere public, so its meaning here is inferred and worth stating plainly: "
+            f"across this season's pool, goals minus xGoals is -32.9, and goals minus (xGoals + xplace) is "
+            f"+8.8 — adding the term closes 73% of the gap, which is what a placement increment on a "
+            f"pre-shot model should do. It correlates 0.57 with the finishing margin: related, not "
+            f"identical. "
+            f"{'Penalties are excluded from both axes. ' if pens_excluded else 'Penalties are INCLUDED — the demo snapshot has no shot-pattern split. '}"
+            f"The vertical axis is a residual, not a skill: most of it is noise, and the “± chance” column "
+            f"below is the 95% margin the player's own shot volume produces by luck alone. Treat a residual "
+            f"smaller than that column as nothing at all."
+        ),
+        "table": {
+            "caption": (
+                f"All {eligible} players with {min_shots}+ non-penalty shots — including the ones inside the "
+                f"{min_margin}-goal cut that the chart above leaves out. Sorted by finishing margin; "
+                f"“Placement” and “Residual” sum to “Margin” by construction."
+            ),
+            "columns": [
+                {"key": "player", "label": "Player", "align": "left"},
+                {"key": "team", "label": "Team", "align": "left"},
+                {"key": "shots", "label": "Shots", "num": True},
+                {"key": "xg", "label": xg_word, "num": True},
+                {"key": "goals", "label": "Goals", "num": True},
+                {"key": "gap", "label": "Margin", "num": True},
+                {"key": "place", "label": "Placement", "num": True},
+                {"key": "resid", "label": "Residual", "num": True},
+                {"key": "chance", "label": "± chance", "num": True},
+            ],
+            "rows": [
+                {"player": r["name"], "team": r["team"], "shots": r["fin_shots"],
+                 "xg": round(r["fin_xg"], 2), "goals": r["fin_goals"],
+                 "gap": round(r["gap"], 2), "place": round(r["fin_place"], 2),
+                 "resid": round(r["residual"], 2), "chance": round(r["chance"], 2)}
+                for r in sorted(table_pool, key=lambda r: r["gap"], reverse=True)
+            ],
+        },
+        "data": [
+            {"x": round(r["fin_place"], 4), "y": round(r["residual"], 4), "badge": r["team"],
+             "tooltip": (
+                 f'<div class="name">{r["name"]}</div>'
+                 f'<div class="row">{r["team"]} &middot; {r["minutes"]} min &middot; {r["fin_shots"]} shots</div>'
+                 f'<div class="row">{xg_word} {r["fin_xg"]:.2f} &middot; Goals {r["fin_goals"]} &middot; '
+                 f'margin {r["gap"]:+.2f}</div>'
+                 f'<div class="row">placement {r["fin_place"]:+.2f} &middot; residual {r["residual"]:+.2f} '
+                 f'&middot; chance &plusmn;{r["chance"]:.2f}</div>'
+             ),
+             "highlight": r["id"] == top["id"],
+             # Literal +/- and no HTML entities: annotations are written to an
+             # SVG <text> node via textContent (see the finishing chart).
+             "annotation": (
+                 f"{last}: {top['gap']:+.1f} margin, {top['fin_place']:+.1f} from placement"
+             ) if r["id"] == top["id"] else None}
+            for r in pool
+        ],
+    }
