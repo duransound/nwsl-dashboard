@@ -25,3 +25,10 @@ dashboard.html
 _mock_dashboard.html
 probe_report.txt
 _to_delete/
+
+# freeze-frame study: the StatsBomb clone (~380MB) and derived shot tables
+freeze_frames/statsbomb-open-data/
+freeze_frames/shots_2023*.csv
+
+# Tableau writes a lock/recovery file beside the workbook while it is open
+tableau/.~*.twbr
