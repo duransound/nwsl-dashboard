@@ -32,3 +32,7 @@ freeze_frames/shots_2023*.csv
 
 # Tableau writes a lock/recovery file beside the workbook while it is open
 tableau/.~*.twbr
+# R session leftovers from running/deploying the Shiny app in place
+.Rhistory
+.RData
+.Rproj.user/
