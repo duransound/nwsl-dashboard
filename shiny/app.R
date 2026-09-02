@@ -18,7 +18,9 @@
 #
 # DEPLOY (free tier)
 #   install.packages("rsconnect")
-#   rsconnect::deployApp()
+#   rsconnect::deployApp(appName = "nwsl-finishing-explorer")
+#   # appName is not optional in practice -- without it the app is named after
+#   # this directory ("shiny") and the public URL says nothing about it.
 #
 # DATA
 #   Live from the American Soccer Analysis API when it is reachable. Falls back

@@ -25,8 +25,19 @@ Opens at `http://127.0.0.1:xxxx`. No R experience needed to check it works.
 ```r
 install.packages("rsconnect")
 rsconnect::setAccountInfo(name="...", token="...", secret="...")   # from shinyapps.io
-rsconnect::deployApp()
+setwd("path/to/nwsl_xg_starter/shiny")
+rsconnect::deployApp(appName = "nwsl-finishing-explorer")
 ```
+
+Pass `appName` explicitly. Without it the app takes the name of the directory
+it lives in — `shiny` — and the URL becomes `.../shiny/`, which says nothing
+about what the app is and cannot be renamed afterwards without redeploying to
+a new address. With it:
+
+    https://<your-account>.shinyapps.io/nwsl-finishing-explorer/
+
+Get the three `setAccountInfo` values from shinyapps.io under Account →
+Tokens → Show. They are credentials; keep them out of the repo.
 
 shinyapps.io's free tier allows five applications and 25 active hours a month,
 which is more than enough for a portfolio piece. The deployed URL is the
