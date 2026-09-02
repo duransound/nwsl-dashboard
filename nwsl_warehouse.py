@@ -289,11 +289,13 @@ def _load_team_splits(con, load_id: int, season: str, *, payloads=None,
             else:
                 rows = _get("players/xgoals", {"season_name": season, "player_id": player_id,
                                                "team_id": team_id, "minimum_minutes": 0})
-            con.executemany(
-                """INSERT INTO raw.asa_records
-                   (load_id, endpoint, season, variant, fetched_at, record)
-                   VALUES (?, 'players/xgoals', ?, ?, ?, ?)""",
-                [[load_id, season, SPLIT_VARIANT, dt.datetime.now(), json.dumps(r)] for r in rows])
+            params = [[load_id, season, SPLIT_VARIANT, dt.datetime.now(), json.dumps(r)]
+                      for r in rows]
+            if params:                       # executemany raises on an empty list
+                con.executemany(
+                    """INSERT INTO raw.asa_records
+                       (load_id, endpoint, season, variant, fetched_at, record)
+                       VALUES (?, 'players/xgoals', ?, ?, ?, ?)""", params)
             saved.extend(rows)
             written += len(rows)
         except Exception as exc:                                   # noqa: BLE001
@@ -362,6 +364,15 @@ def load(con, season: str, *, source: str = "api", from_dir: str | None = None,
             path = Path(from_dir) / _snapshot_name(endpoint, variant, season)
             if path.exists():
                 payloads[(endpoint, variant)] = json.loads(path.read_text())
+        # The by-team splits are not in ENDPOINTS -- which calls to make is only
+        # known after /players/xgoals returns -- so this loop would skip their
+        # snapshot and an offline rebuild would quietly come out WITHOUT the
+        # transfer resolution the live path has. Caught by
+        # assert_player_splits_reconcile failing on a --from-dir rebuild that
+        # had loaded everything else correctly.
+        split_path = Path(from_dir) / _snapshot_name("players/xgoals", SPLIT_VARIANT, season)
+        if split_path.exists():
+            payloads[("players/xgoals", SPLIT_VARIANT)] = json.loads(split_path.read_text())
     else:
         payloads = None                        # fetched below, one call at a time
 
@@ -395,12 +406,13 @@ def load(con, season: str, *, source: str = "api", from_dir: str | None = None,
                 (Path(dump_raw) / _snapshot_name(endpoint, variant, season)
                  ).write_text(json.dumps(rows, indent=1))
 
-            con.executemany(
-                """INSERT INTO raw.asa_records
-                   (load_id, endpoint, season, variant, fetched_at, record)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                [[load_id, endpoint, season, variant, dt.datetime.now(), json.dumps(r)]
-                 for r in rows])
+            params = [[load_id, endpoint, season, variant, dt.datetime.now(), json.dumps(r)]
+                      for r in rows]
+            if params:                       # same guard: an endpoint can return []
+                con.executemany(
+                    """INSERT INTO raw.asa_records
+                       (load_id, endpoint, season, variant, fetched_at, record)
+                       VALUES (?, ?, ?, ?, ?, ?)""", params)
 
             n_records += len(rows)
             n_endpoints += 1
