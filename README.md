@@ -1,23 +1,88 @@
-# NWSL xG Starter Kit
+# NWSL xG
 
 [![Weekly NWSL refresh](https://github.com/duransound/nwsl-dashboard/actions/workflows/weekly.yml/badge.svg)](https://github.com/duransound/nwsl-dashboard/actions/workflows/weekly.yml)
 
-A minimal, working starting point for building xG (Expected Goals) charts from
-[American Soccer Analysis](https://www.americansocceranalysis.com/) data — the
-same public API that powers ASA's own site and the `itscalledsoccer` R/Python
-packages professionals use.
+A weekly-refreshed NWSL analytics dashboard, and the tested pipeline underneath it.
 
-The dashboard (below) follows this project's **Design Guidelines** doc — a
-blend of IBM Carbon / NASA's 1976 Graphics Standards Manual (restraint,
-one consistent system, color as meaning not decoration) and data-storytelling
-rules from Duarte, Knaflic, and Tufte (lead with the insight, emphasize one
-point per chart, cut chartjunk). Concretely: every chart title states a
-finding rather than a metric name, exactly one bar/bubble per chart is
-highlighted in the palette's blue/red while the rest recede to gray, and
-tabs are ordered from the league-wide picture down to the specific finding
-rather than presented as equally-weighted views.
+Everything here is built from [American Soccer Analysis](https://www.americansocceranalysis.com/)'s
+public API — the same data behind ASA's own site and the `itscalledsoccer`
+packages. Raw JSON responses land in DuckDB untouched and append-only, a dbt
+project models them into dimensions, facts and marts, **41 data tests** have to
+pass, and only then is the static site rebuilt and pushed. Nothing is
+hand-edited on the way through, and a load that fails leaves yesterday's
+numbers standing rather than half of today's.
 
-## Files
+## What's live
+
+|  |  |
+|---|---|
+| **[Dashboard →](https://duransound.github.io/nwsl-dashboard/)** | 15 tabs, running from the league-wide picture down to individual finishing. Rebuilt every Tuesday by GitHub Actions. One self-contained HTML file — no server, no build step, no JavaScript dependencies. |
+| **[Tableau Public →](https://public.tableau.com/app/profile/ian.duran/viz/nwsl-xg-difference/Placementvs_Luck)** | Three sheets off the same warehouse extracts: team xG difference, the league xGF/xGA quadrant, and Placement vs. Luck. |
+| **Shiny app** | [`shiny/`](shiny/) — every threshold the dashboard bakes in at build time, handed to the reader as a control instead. Deploying to `https://ianduran.shinyapps.io/nwsl-finishing-explorer/`; this row becomes a link once it is up. |
+
+## What's underneath
+
+```
+ASA API  ──▶  raw.asa_records          append-only JSON, one row per record,
+                    │                  every load stamped; nothing overwritten
+                    ▼
+              stg.*                    typed views: team_id arrays unwrapped,
+                    │                  minutes_played / minutes coalesced
+                    ▼
+              dw.dim_* fct_* mart_*    dbt — 23 models, 41 data tests
+                    │
+                    ▼
+              index.html               15 tabs, published weekly by CI
+```
+
+Raw is never rewritten, so any number on the site can be traced back to the
+exact API response it came from, and a modelling change can be replayed
+against last month's payloads without re-fetching anything.
+
+| Path | What it is |
+|---|---|
+| [`nwsl_warehouse.py`](nwsl_warehouse.py) | Loader and CLI — `load`, `build`, `tables`, `sql`, `dbt`. Talks to ASA, writes raw, drives the models. |
+| [`sql/`](sql/) | `010_raw.sql`, `020_staging.sql`, `030_marts.sql` — the whole warehouse in plain SQL, runnable without dbt. |
+| [`dbt/`](dbt/) | The same models under dbt, plus the tests. [`dbt/tests/`](dbt/tests/) holds 11 singular tests, each one named for a bug that actually happened. |
+| [`WAREHOUSE.md`](WAREHOUSE.md) | How the warehouse is shaped and why. |
+| `build_dashboard.py`, `chart_builders.py`, `dashboard_template.py` | The site: what each chart says, the shared chart library, the page itself. |
+| [`tableau/`](tableau/) | The workbook, the three CSV extracts, and the exporter that writes them. |
+| [`freeze_frames/`](freeze_frames/) | The StatsBomb shot-context study. |
+| [`.github/workflows/weekly.yml`](.github/workflows/weekly.yml) | Tests → warehouse + dbt → rebuild → publish. The four steps that have to pass in order. |
+
+## Findings
+
+- **[Placement vs. Luck](placement-vs-luck-post.md)** — ASA publishes a field
+  called `xplace` that is documented nowhere. Read as a placement increment, it
+  splits finishing overperformance into the part a player controls and the part
+  that is weather. Ashley Sanchez leads the league on finishing margin with a
+  placement of −0.15; Katherine Rader's smaller margin is three-quarters
+  placement. The post argues the case and then argues against itself with the
+  chance band.
+- **[Freeze frames](freeze_frames/README.md)** — whether StatsBomb's shot
+  freeze frames (where every player stood at the moment of the shot) improve on
+  a pre-shot xG model. A negative result, written up as one rather than
+  quietly dropped.
+
+## Design
+
+Charts follow this project's Design Guidelines: IBM Carbon and NASA's 1976
+Graphics Standards Manual for restraint and a single consistent system,
+Duarte / Knaflic / Tufte for the storytelling. In practice — every chart title
+states a finding rather than a metric name; exactly one mark per chart carries
+the accent colour (amber `#C98A2E`, or red `#e34948` when the story is
+negative) while everything else recedes to grey; and the tabs are ordered from
+the league-wide picture down to the specific finding rather than presented as
+equally-weighted views.
+
+---
+
+**Everything below is the build log** — how this got here, round by round,
+including the parts that were wrong first and had to be corrected. It is
+chronological, so the early sections describe a smaller project than the one
+above.
+
+## Files (the original starter kit)
 
 - **`nwsl_xg_charts.py`** — the real, reusable script. Calls the ASA API
   directly with `requests`, pulls team- and player-level xG, and writes 2 CSVs
