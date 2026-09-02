@@ -16,6 +16,11 @@
 #   crontab -e
 #   0 7 * * 1 /path/to/nwsl_xg_starter/run_weekly_update.sh >> /path/to/nwsl_xg_starter/weekly_update.log 2>&1
 #
+# NOTE (round 32): the weekly schedule now lives in
+# .github/workflows/weekly.yml, which runs on GitHub's machines whether or not
+# this laptop is awake. This script is for local previews; it only pushes when
+# DEPLOY=1 is set. Do not schedule both.
+#
 # On Windows, use run_weekly_update.ps1 with Task Scheduler instead.
 #
 # GitHub Pages auto-deploy (optional -- see README for the one-time setup):
@@ -66,8 +71,26 @@ ls -1t history/dashboard_*.html 2>/dev/null | tail -n +13 | xargs -r rm --
 
 echo "[$TIMESTAMP] Done. dashboard.html updated; snapshot saved to history/dashboard_${TIMESTAMP}.html"
 
-# ---- GitHub Pages auto-deploy (only runs if you've set this up) ----
-if [ -d ".git" ] && git remote get-url origin >/dev/null 2>&1; then
+# ---- GitHub Pages deploy ----
+#
+# Round 32: this used to push on every run. That was right when this script
+# was the only thing publishing. Since .github/workflows/weekly.yml took over
+# the schedule there are two publishers, and a manual run here pushes on top
+# of a commit the workflow already made -- which is exactly the
+# non-fast-forward rejection hit on 2026-09-02.
+#
+# So deploying is now opt-in. A plain run rebuilds dashboard.html locally and
+# stops, which is what you want when previewing a change; CI owns the live
+# site. Push from here deliberately with:
+#
+#     DEPLOY=1 ./run_weekly_update.sh
+#
+# and pull first if the workflow has run since your last fetch.
+if [ "${DEPLOY:-0}" != "1" ]; then
+    echo "[$TIMESTAMP] Local build only -- not deploying."
+    echo "[$TIMESTAMP] GitHub Actions publishes the live site every Tuesday."
+    echo "[$TIMESTAMP] To publish from here anyway: DEPLOY=1 ./run_weekly_update.sh"
+elif [ -d ".git" ] && git remote get-url origin >/dev/null 2>&1; then
     echo "[$TIMESTAMP] Git remote detected -- deploying to GitHub Pages..."
     cp dashboard.html index.html
     git add index.html
