@@ -45,6 +45,7 @@ against last month's payloads without re-fetching anything.
 | [`sql/`](sql/) | `010_raw.sql`, `020_staging.sql`, `030_marts.sql` — the whole warehouse in plain SQL, runnable without dbt. |
 | [`dbt/`](dbt/) | The same models under dbt, plus the tests. [`dbt/tests/`](dbt/tests/) holds 11 singular tests, each one named for a bug that actually happened. |
 | [`WAREHOUSE.md`](WAREHOUSE.md) | How the warehouse is shaped and why. |
+| [`PLAYBOOK.md`](PLAYBOOK.md) | The method, generalised — how to stand up the next data project without relearning this one. |
 | `build_dashboard.py`, `chart_builders.py`, `dashboard_template.py` | The site: what each chart says, the shared chart library, the page itself. |
 | [`tableau/`](tableau/) | The workbook, the three CSV extracts, and the exporter that writes them. |
 | [`freeze_frames/`](freeze_frames/) | The StatsBomb shot-context study. |
