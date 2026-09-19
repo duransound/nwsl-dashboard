@@ -1281,3 +1281,318 @@ def build_placement_chart(player_rows, minimum_minutes=500, min_shots=10, min_ma
             for r in pool
         ],
     }
+
+
+# --------------------------------------------------------------------------
+# Standings, Matchup Predictor and Best XI (round 39)
+#
+# Three tabs that share one idea: the rest of this dashboard argues from
+# expected goals, and these argue from what actually happened. A league table
+# is results. Elo is results. The Best XI is the one exception -- it is built
+# from the same above-replacement goals-added rows the Position Gaps tab
+# already fetches -- and it earns its place next to the other two because it
+# answers the question those two provoke: given that this team is where it is,
+# who are the eleven players it should be putting on the pitch?
+#
+# The data honesty rules for all three live in standings.py, matchup_predictor.py
+# and best_lineup.py. What lives here is only the presentation: the story
+# point each tab leads with, and the dict the template renders.
+# --------------------------------------------------------------------------
+
+import best_lineup as _bl
+import matchup_predictor as _mp
+import standings as _st
+
+
+def _table_story(rows, gaps):
+    """Insight-led headline for the league table: the team whose league
+    position and xG-difference rank disagree the most. That is the finding a
+    table on THIS dashboard should lead with -- a bare 'Team X leads the
+    league' is visible from the first row and tells a reader nothing the table
+    doesn't already show."""
+    if not rows:
+        return "No team has played a league match yet", None
+    if not gaps or gaps[0]["gap"] == 0:
+        leader = rows[0]
+        return (f"{leader['team']} lead the league on {leader['pts']} points, "
+                f"and the xG ranking agrees with the table top to bottom"), leader["abbr"]
+    g = gaps[0]
+    if g["direction"] == "over":
+        return (f"{g['team']} are {_ordinal(g['table_rank'])} in the table but only "
+                f"{_ordinal(g['xgd_rank'])} on xG difference — the league's biggest "
+                f"gap between results and performance"), g["abbr"]
+    return (f"{g['team']} are {_ordinal(g['xgd_rank'])} in the league on xG difference "
+            f"but only {_ordinal(g['table_rank'])} in the table — the most "
+            f"under-rewarded season in the NWSL"), g["abbr"]
+
+
+def build_standings_chart(table_rows, basis, reconciliation, draws=None, season=""):
+    """table_rows / basis / reconciliation: standings.build_table output.
+    draws: standings.derived_league_draws output, or None.
+
+    On the results path the W/D/L columns are counted from real scorelines. On
+    the totals path they are DROPPED rather than rendered as three columns of
+    blanks -- /teams/xgoals does not publish them and they are not recoverable
+    from points and games played, so the honest surface is to say so in the
+    footnote and show every column that IS exact.
+    """
+    if not table_rows:
+        return None
+
+    gaps = _st.xg_rank_gaps(table_rows)
+    title, highlight = _table_story(table_rows, gaps)
+    has_wdl = basis == "games"
+
+    columns = [
+        {"key": "rank", "label": "#", "num": True},
+        {"key": "team", "label": "Team", "align": "left"},
+        {"key": "gp", "label": "GP", "num": True},
+    ]
+    if has_wdl:
+        columns += [{"key": "w", "label": "W", "num": True},
+                    {"key": "d", "label": "D", "num": True},
+                    {"key": "l", "label": "L", "num": True}]
+    columns += [
+        {"key": "pts", "label": "Pts", "num": True},
+        {"key": "gf", "label": "GF", "num": True},
+        {"key": "ga", "label": "GA", "num": True},
+        {"key": "gd", "label": "GD", "num": True},
+        {"key": "ppg", "label": "Pts/game", "num": True},
+        {"key": "xgd", "label": "xGD", "num": True},
+        {"key": "xpts", "label": "xPts", "num": True},
+    ]
+
+    out_rows = []
+    for r in table_rows:
+        row = {
+            "rank": r["rank"], "team": r["team"], "gp": r["gp"], "pts": r["pts"],
+            "gf": r["gf"], "ga": r["ga"],
+            "gd": None if r["gd"] is None else f"{r['gd']:+d}",
+            "ppg": None if r["ppg"] is None else round(r["ppg"], 2),
+            "xgd": None if r["xgd"] is None else f"{r['xgd']:+.1f}",
+            "xpts": None if r["xpts"] is None else round(r["xpts"], 1),
+            "abbr": r["abbr"],
+        }
+        if has_wdl:
+            row.update({"w": r["w"], "d": r["d"], "l": r["l"]})
+        out_rows.append(row)
+
+    if has_wdl:
+        basis_note = (
+            "Wins, draws and losses are counted from ASA's per-game results "
+            "feed; points, goals for and goals against are the published "
+            "season totals, and the two are reconciled on every build.")
+    else:
+        basis_note = (
+            "Wins, draws and losses are <strong>not shown because ASA's team "
+            "endpoint does not publish them</strong>, and they cannot be "
+            "recovered from what it does: W+D+L = games and 3W+D = points is "
+            "two equations in three unknowns. Every other column here is "
+            "exact, not estimated.")
+        if draws:
+            drawn, matches = draws
+            basis_note += (
+                f" One thing is exactly derivable league-wide: a decided match "
+                f"puts three points into the league and a draw puts two, so the "
+                f"{matches} matches played so far include {drawn} draws "
+                f"({drawn / matches:.0%}).")
+
+    if reconciliation:
+        basis_note += (" Reconciliation notes this build: "
+                       + "; ".join(reconciliation[:4])
+                       + (" …" if len(reconciliation) > 4 else "") + ".")
+
+    return {
+        "type": "standings", "tabLabel": "Standings",
+        "metricLabel": f"NWSL {season} league table".strip(),
+        "title": title,
+        "blurb": (
+            "The actual table — points, goals and goal difference — with xG "
+            "difference and expected points alongside, so the gap between what "
+            "each side has earned and what it has deserved is readable in one "
+            "row. Every column sorts; click a heading."),
+        "footnote": (
+            f"{basis_note} xGD and xPts are ASA's expected-goal difference and "
+            f"expected points for the same fixtures. Season totals, not per-96 "
+            f"— a team has no minutes-played denominator."),
+        "basis": basis,
+        "table": {
+            "caption": "Sorted by points, then goal difference, then goals scored.",
+            "columns": columns,
+            "rows": out_rows,
+            "highlight": None if not highlight else {"key": "abbr", "value": highlight},
+        },
+    }
+
+
+def build_matchup_chart(ratings, team_names, nu, basis, draw_rate=None,
+                        games_played=None):
+    """ratings: {abbr: Elo}. nu: matchup_predictor.nu_from_draw_rate output.
+    basis: "games" (real game-by-game Elo) or "totals" (the documented
+    table-based approximation) -- carried onto the page, not just into a
+    comment, because the two are different claims.
+
+    Probabilities are recomputed in the browser on every dropdown change, so
+    the whole rating set travels with the page and nothing round-trips.
+    """
+    if len(ratings or {}) < 2:
+        return None
+
+    ordered = sorted(ratings.items(), key=lambda kv: -kv[1])
+    name_of = {a: team_names.get(a, a) for a, _ in ordered}
+
+    # Story point: the most lopsided fixture the league can currently produce,
+    # found by scanning every ordered pair at home. That is a claim about the
+    # league, not about whichever two teams happen to be selected.
+    best_pair, best_p = None, -1.0
+    for a, ra in ordered:
+        for b, rb in ordered:
+            if a == b:
+                continue
+            p, _, _ = _mp.probabilities(ra, rb, nu, venue="home")
+            if p > best_p:
+                best_pair, best_p = (a, b), p
+    home, away = best_pair
+    title = (f"{name_of[home]} at home to {name_of[away]} is the league's most "
+             f"lopsided fixture — a {best_p:.0%} win probability")
+
+    if basis == "games":
+        basis_note = (
+            "Ratings are true game-by-game Elo: every side starts at 1500 and "
+            "is updated after each result with a home-field term "
+            f"({_mp.HOME_ADVANTAGE:.0f} Elo points) and a margin-of-victory "
+            "multiplier, so a 4-0 counts for more than a 1-0 but not four "
+            "times as much.")
+    else:
+        basis_note = (
+            "<strong>These are not true Elo ratings.</strong> ASA's per-game "
+            "results feed did not answer on this build, so there is nothing to "
+            "iterate over. The ratings below are a documented approximation: "
+            f"points per game ({_mp.PPG_WEIGHT:.0%}) and goal difference per "
+            f"game ({_mp.GD_WEIGHT:.0%}), each standardised across the league "
+            f"and scaled at {_mp.SPREAD_PER_SD:.0f} Elo points per standard "
+            "deviation so the spread matches what game-by-game Elo produces "
+            "for a league this size. They rank teams the way the table does; "
+            "they do not carry any information the table doesn't.")
+
+    draw_note = (
+        f"Draws come from the Davidson (1970) ties model, whose one parameter "
+        f"is pinned to this season's own draw rate ({draw_rate:.0%}) rather "
+        f"than assumed" if draw_rate is not None else
+        "Draws come from the Davidson (1970) ties model")
+
+    return {
+        "type": "matchup", "tabLabel": "Matchup Predictor",
+        "metricLabel": "Win / draw / loss probability from season results",
+        "title": title,
+        "blurb": (
+            "Pick any two teams. The probabilities update in the page — nothing "
+            "is fetched. These ratings are built from results only, not from "
+            "expected goals, which is the point: when this tab disagrees with "
+            "the xG tabs, the disagreement is the information."),
+        "footnote": (
+            f"{basis_note} {draw_note}. Home advantage is applied to whichever "
+            f"side is listed as hosting; switch the venue to see the same pair "
+            f"neutral or reversed. "
+            + (f"Built on {games_played} results so far this season. "
+               if games_played else "")
+            + "A probability is not a prediction of one match — it is the share "
+              "of a long run of identical matches that would end each way."),
+        "ratings": {a: round(r, 1) for a, r in ordered},
+        "teamNames": name_of,
+        "nu": round(nu, 5),
+        "homeAdvantage": _mp.HOME_ADVANTAGE,
+        "basis": basis,
+        # The tab opens on the fixture the title names, so the page's one
+        # claim and the page's initial state are the same thing -- the same
+        # rule every chart here follows by pre-selecting its own story point.
+        "defaultHome": home,
+        "defaultAway": away,
+        "table": {
+            "caption": "Every team's rating, strongest first.",
+            "columns": [
+                {"key": "rank", "label": "#", "num": True},
+                {"key": "team", "label": "Team", "align": "left"},
+                {"key": "rating", "label": "Rating", "num": True},
+                {"key": "vs_average", "label": "vs. league average", "num": True},
+            ],
+            "rows": [
+                {"rank": i + 1, "team": name_of[a], "rating": round(r, 1),
+                 "vs_average": f"{r - _mp.START_RATING:+.1f}"}
+                for i, (a, r) in enumerate(ordered)
+            ],
+        },
+    }
+
+
+def build_best_lineup_chart(rows_by_position, teams, player_names=None,
+                            minimum_minutes=None):
+    """rows_by_position: exactly what build_dashboard.fetch_position_gaps
+    returns — no extra API call. teams: [{"abbr", "name", ...}].
+    minimum_minutes: the dashboard's Qualification object, only so the
+    footnote can name the floor that is ACTUALLY binding (see below)."""
+    lineups = _bl.build_all(rows_by_position, player_names or {})
+    if not lineups:
+        return None
+
+    name_of = {t["abbr"]: t["name"] for t in teams}
+    best = _bl.strongest(lineups)
+    incomplete = False
+    if best is None:
+        # Nothing in the league is complete — usually one position endpoint
+        # came back empty. Compare the fullest lineups against each other
+        # rather than printing "no XI exists", which reads as a broken tab
+        # when in fact ten of eleven slots are filled.
+        best = _bl.strongest(lineups, require_complete=False)
+        incomplete = best is not None
+
+    if best and not incomplete:
+        abbr, key, lu = best
+        title = (f"{name_of.get(abbr, abbr)} can field the league's strongest "
+                 f"complete XI — {lu['strength']:+.2f} goals added per 96 above "
+                 f"replacement, averaged across eleven slots, in a {key}")
+        default_team, default_formation = abbr, key
+    elif best:
+        abbr, key, lu = best
+        title = (f"No team can fill all eleven slots yet; {name_of.get(abbr, abbr)} "
+                 f"come closest and strongest — {lu['filled']} of {lu['total']} "
+                 f"slots in a {key}, averaging {lu['strength']:+.2f} goals added "
+                 f"per 96 above replacement")
+        default_team, default_formation = abbr, key
+    else:
+        title = "No player has enough minutes at a position to pick an XI yet"
+        default_team = sorted(lineups)[0]
+        default_formation = _bl.FORMATION_KEYS[0]
+
+    filled = sum(lu["filled"] for t in lineups.values() for lu in t.values())
+    total = sum(lu["total"] for t in lineups.values() for lu in t.values())
+
+    return {
+        "type": "best-lineup", "tabLabel": "Best XI",
+        "metricLabel": "Strongest available lineup, graded against replacement",
+        "title": title,
+        "blurb": (
+            "Pick a team and a shape. Each slot shows that team's best-rated "
+            "qualifying player who can play there, measured in goals added per "
+            "96 minutes above replacement level at their own position — the "
+            "same figure behind the Position Gaps grid, which is what makes a "
+            "center back and a striker comparable. Amber is above "
+            "replacement, red below."),
+        "footnote": (
+            f"Candidates are the same qualifying pool the Position Gaps grid "
+            f"uses ({qualification_phrase(minimum_minutes)}), which in practice "
+            f"is the binding floor; on top of it a player needs "
+            f"{_bl.MIN_SLOT_MINUTES} minutes at a position before they can fill "
+            f"a slot there. A slot with nobody qualifying is shown empty rather "
+            f"than filled from a position it doesn't belong to. Slots are filled "
+            f"most-constrained-first, each taking the highest-rated unassigned "
+            f"player, so the same data always produces the same XI. A player "
+            f"is considered at every position they logged minutes at but "
+            f"selected at most once. {filled} of {total} slots across all "
+            f"teams and shapes can be filled from this season's minutes."),
+        "formations": _bl.FORMATIONS,
+        "lineups": lineups,
+        "teamNames": {a: name_of.get(a, a) for a in lineups},
+        "defaultTeam": default_team,
+        "defaultFormation": default_formation,
+    }

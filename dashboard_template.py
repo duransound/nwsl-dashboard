@@ -168,6 +168,62 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     padding: 7px 12px; cursor: pointer;
   }}
   .download-btn:hover {{ border-color: var(--series-1); color: var(--series-1-dark); }}
+  /* ---- Standings / Matchup Predictor / Best XI (round 39) ---- */
+  /* The one emphasized row, same rule as the one emphasized mark on a chart:
+     a tint of the emphasis color rather than a second hue. */
+  .data-table tbody tr.row-highlight td {{ background: rgba(201, 138, 46, 0.14); font-weight: 700; }}
+  .data-table tbody tr.row-highlight:hover td {{ background: rgba(201, 138, 46, 0.22); }}
+  .prob-bar {{ display: flex; width: 100%; height: 44px; border-radius: 8px; overflow: hidden; margin: 18px 0 10px; }}
+  .prob-seg {{
+    display: flex; align-items: center; justify-content: center; min-width: 0;
+    font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+    color: #fff; white-space: nowrap; overflow: hidden;
+  }}
+  /* Home keeps the emphasis color; the away side is brand clay rather than
+     --red, because neither team in a head-to-head is the "negative" one and
+     red would read as a judgement. */
+  .prob-seg.home {{ background: var(--series-1); color: var(--series-1-ink); }}
+  .prob-seg.draw {{ background: var(--brand-warmgray); }}
+  .prob-seg.away {{ background: var(--brand-clay); }}
+  .prob-legend {{ display: flex; gap: 18px; flex-wrap: wrap; font-size: 11.5px; color: var(--text-secondary); }}
+  .prob-legend .legend-swatch {{ border-radius: 3px; }}
+  .matchup-headline {{ font-size: 13.5px; font-weight: 500; color: var(--text-primary); margin: 14px 0 0; max-width: 660px; line-height: 1.5; }}
+  .matchup-elo {{ font-size: 11.5px; color: var(--text-muted); margin: 6px 0 0; font-variant-numeric: tabular-nums; }}
+  .matchup-note {{ font-size: 12.5px; color: var(--text-secondary); margin: 14px 0 0; }}
+  /* Lines are stored defensive-most first; column-reverse puts the keeper at
+     the bottom of the shape the way a formation is always drawn. */
+  .pitch {{
+    background: var(--surface-2); border: 1px solid var(--grid); border-radius: 10px;
+    padding: 16px 14px; margin-top: 16px; display: flex; flex-direction: column-reverse; gap: 12px;
+  }}
+  .pitch-row {{ display: flex; gap: 10px; justify-content: center; }}
+  .slot {{
+    flex: 1 1 0; min-width: 0; max-width: 156px; background: var(--surface-1);
+    border: 1px solid var(--grid); border-left: 3px solid var(--baseline);
+    border-radius: 8px; padding: 8px 10px;
+  }}
+  .slot.above {{ border-left-color: var(--series-1); }}
+  .slot.below {{ border-left-color: var(--red); }}
+  .slot.empty {{ background: transparent; border-left-color: var(--grid); }}
+  .slot-pos {{ font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }}
+  .slot-name {{ font-size: 12.5px; font-weight: 700; color: var(--text-primary); margin-top: 2px; overflow-wrap: anywhere; line-height: 1.25; }}
+  .slot-name.none {{ font-weight: 500; color: var(--text-muted); }}
+  .slot-value {{ font-size: 11.5px; font-weight: 700; color: var(--series-1-dark); margin-top: 3px; font-variant-numeric: tabular-nums; }}
+  .slot-value.below {{ color: var(--red); }}
+  .slot-meta {{ font-size: 10.5px; color: var(--text-muted); margin-top: 1px; font-variant-numeric: tabular-nums; }}
+  .lineup-caption {{ font-size: 12.5px; font-weight: 500; color: var(--text-primary); margin-top: 14px; max-width: 660px; line-height: 1.5; }}
+  @media (max-width: 600px) {{
+    .pitch {{ padding: 12px 8px; gap: 8px; }}
+    /* A five-slot midfield line squeezed into 360px broke player names mid-
+       word ("Mal Swans / on"). Wrapping the line instead keeps every card
+       wide enough to hold a name, at the cost of the row reading as two --
+       which is still recognisably the same shape, and legible. */
+    .pitch-row {{ gap: 6px; flex-wrap: wrap; }}
+    .slot {{ padding: 6px 7px; flex: 1 1 28%; min-width: 92px; }}
+    .slot-name {{ font-size: 11px; }}
+    .slot-value, .slot-meta {{ font-size: 10px; }}
+    .prob-seg {{ font-size: 11px; }}
+  }}
   /* ---- Phone-width behaviour ----
      Most traffic to a shared link is mobile, and until the viewport meta tag
      above was added this page rendered at desktop width on a phone. The
@@ -478,6 +534,11 @@ function buildDataTable(spec) {{
     tbody.innerHTML = "";
     rows.forEach(r => {{
       const tr = document.createElement("tr");
+      // One emphasized row, author-picked, surviving re-sorts -- the table
+      // equivalent of the single highlighted mark every chart here carries.
+      if (spec.highlight && r[spec.highlight.key] === spec.highlight.value) {{
+        tr.className = "row-highlight";
+      }}
       spec.columns.forEach(col => {{
         const td = document.createElement("td");
         const v = r[col.key];
@@ -1288,6 +1349,290 @@ function drawMethods(container, cfg) {{
   }}
 }}
 
+
+// ---------- Standings (round 39) ----------
+// The whole tab is the sortable table component that already exists. A league
+// table is a table; wrapping it in an SVG would make it worse to read and
+// impossible to sort, and this dashboard's own rule is that any chart with
+// per-point numbers worth quoting gets one of these anyway.
+function drawStandings(container, cfg) {{
+  container.appendChild(buildDataTable(cfg.table));
+}}
+
+// ---------- Matchup Predictor (round 39) ----------
+// Davidson (1970) three-outcome model. nu is calibrated server-side to the
+// season's own draw rate; see matchup_predictor.py for the derivation.
+function matchupProbs(ratingA, ratingB, nu, edge) {{
+  const x = Math.pow(10, (ratingA + edge - ratingB) / 400);
+  const root = Math.sqrt(x);
+  const z = x + 1 + nu * root;
+  return [x / z, (nu * root) / z, 1 / z];
+}}
+
+function drawMatchup(container, cfg) {{
+  const abbrs = Object.keys(cfg.ratings).sort((a, b) =>
+    (cfg.teamNames[a] || a).localeCompare(cfg.teamNames[b] || b));
+
+  function picker(labelText, selected) {{
+    const group = document.createElement("div");
+    group.className = "picker-group";
+    const label = document.createElement("div");
+    label.className = "picker-label";
+    label.textContent = labelText;
+    const select = document.createElement("select");
+    abbrs.forEach(a => {{
+      const opt = el2("option", {{value: a}});
+      opt.textContent = cfg.teamNames[a] || a;
+      select.appendChild(opt);
+    }});
+    select.value = selected;
+    group.appendChild(label);
+    group.appendChild(select);
+    return [group, select];
+  }}
+
+  const pickerRow = document.createElement("div");
+  pickerRow.className = "picker-row";
+  const [homeGroup, homeSelect] = picker("Team A", cfg.defaultHome);
+  const [awayGroup, awaySelect] = picker("Team B", cfg.defaultAway);
+
+  const venueGroup = document.createElement("div");
+  venueGroup.className = "picker-group";
+  const venueLabel = document.createElement("div");
+  venueLabel.className = "picker-label";
+  venueLabel.textContent = "Venue";
+  const venueSelect = document.createElement("select");
+  [["home", "A at home"], ["neutral", "Neutral site"], ["away", "A away"]]
+    .forEach(([v, text]) => {{
+      const opt = el2("option", {{value: v}});
+      opt.textContent = text;
+      venueSelect.appendChild(opt);
+    }});
+  venueGroup.appendChild(venueLabel);
+  venueGroup.appendChild(venueSelect);
+
+  pickerRow.appendChild(homeGroup);
+  pickerRow.appendChild(awayGroup);
+  pickerRow.appendChild(venueGroup);
+  container.appendChild(pickerRow);
+
+  const bar = document.createElement("div");
+  bar.className = "prob-bar";
+  container.appendChild(bar);
+
+  const legend = document.createElement("div");
+  legend.className = "prob-legend";
+  container.appendChild(legend);
+
+  const headline = document.createElement("p");
+  headline.className = "matchup-headline";
+  container.appendChild(headline);
+
+  const eloLine = document.createElement("p");
+  eloLine.className = "matchup-elo";
+  container.appendChild(eloLine);
+
+  const note = document.createElement("p");
+  note.className = "matchup-note";
+  container.appendChild(note);
+
+  function seg(cls, share, text) {{
+    const d = document.createElement("div");
+    d.className = "prob-seg " + cls;
+    d.style.width = (share * 100).toFixed(2) + "%";
+    // Below about a twelfth of the width the label collides with its own
+    // edges, so the number drops out of the bar and stays in the sentence
+    // underneath -- it is never only in the bar.
+    d.textContent = share >= 0.085 ? text : "";
+    d.title = text;
+    bar.appendChild(d);
+  }}
+
+  function swatch(cls, text) {{
+    const item = document.createElement("div");
+    item.className = "legend-item";
+    const sw = document.createElement("span");
+    sw.className = "legend-swatch";
+    sw.style.background = getComputedStyle(document.documentElement)
+      .getPropertyValue(cls).trim();
+    item.appendChild(sw);
+    const t = document.createElement("span");
+    t.textContent = text;
+    item.appendChild(t);
+    legend.appendChild(item);
+  }}
+
+  function render() {{
+    const a = homeSelect.value, b = awaySelect.value;
+    const nameA = cfg.teamNames[a] || a, nameB = cfg.teamNames[b] || b;
+    bar.innerHTML = "";
+    legend.innerHTML = "";
+    if (a === b) {{
+      headline.textContent = "";
+      eloLine.textContent = "";
+      note.textContent = "Pick two different teams to see a matchup.";
+      return;
+    }}
+    note.textContent = "";
+    const venue = venueSelect.value;
+    const edge = venue === "home" ? cfg.homeAdvantage
+               : venue === "away" ? -cfg.homeAdvantage : 0;
+    const [pw, pd, pl] = matchupProbs(cfg.ratings[a], cfg.ratings[b], cfg.nu, edge);
+    const pct = v => (v * 100).toFixed(1) + "%";
+
+    seg("home", pw, pct(pw));
+    seg("draw", pd, pct(pd));
+    seg("away", pl, pct(pl));
+    swatch("--series-1", nameA + " win " + pct(pw));
+    swatch("--brand-warmgray", "Draw " + pct(pd));
+    swatch("--brand-clay", nameB + " win " + pct(pl));
+
+    const venueText = venue === "home" ? "hosting " + nameB
+                    : venue === "away" ? "away at " + nameB
+                    : "against " + nameB + " at a neutral site";
+    const leader = pw > pl ? nameA : (pl > pw ? nameB : null);
+    const lead = leader === null
+      ? "Neither side is favoured."
+      : leader + " are favoured, " + pct(Math.max(pw, pl)) + " to "
+        + pct(Math.min(pw, pl)) + ", with a " + pct(pd) + " chance of a draw.";
+    headline.textContent = nameA + " " + venueText + ": " + lead;
+    const gap = cfg.ratings[a] - cfg.ratings[b];
+    eloLine.textContent = nameA + " " + cfg.ratings[a].toFixed(0) + " vs. "
+      + nameB + " " + cfg.ratings[b].toFixed(0) + " — a "
+      + Math.abs(gap).toFixed(0) + "-point rating gap"
+      + (edge ? ", plus " + Math.abs(edge).toFixed(0) + " for venue" : "")
+      + ".";
+  }}
+
+  homeSelect.addEventListener("change", render);
+  awaySelect.addEventListener("change", render);
+  venueSelect.addEventListener("change", render);
+  render();
+
+  if (cfg.table && cfg.table.rows && cfg.table.rows.length) {{
+    container.appendChild(buildDataTable(cfg.table));
+  }}
+}}
+
+// ---------- Best Possible Lineup (round 39) ----------
+function drawBestLineup(container, cfg) {{
+  const abbrs = Object.keys(cfg.lineups).sort((a, b) =>
+    (cfg.teamNames[a] || a).localeCompare(cfg.teamNames[b] || b));
+
+  const pickerRow = document.createElement("div");
+  pickerRow.className = "picker-row";
+
+  const teamGroup = document.createElement("div");
+  teamGroup.className = "picker-group";
+  const teamLabel = document.createElement("div");
+  teamLabel.className = "picker-label";
+  teamLabel.textContent = "Team";
+  const teamSelect = document.createElement("select");
+  abbrs.forEach(a => {{
+    const opt = el2("option", {{value: a}});
+    opt.textContent = cfg.teamNames[a] || a;
+    teamSelect.appendChild(opt);
+  }});
+  teamSelect.value = cfg.defaultTeam;
+  teamGroup.appendChild(teamLabel);
+  teamGroup.appendChild(teamSelect);
+
+  const formGroup = document.createElement("div");
+  formGroup.className = "picker-group";
+  const formLabel = document.createElement("div");
+  formLabel.className = "picker-label";
+  formLabel.textContent = "Formation";
+  const formSelect = document.createElement("select");
+  cfg.formations.forEach(f => {{
+    const opt = el2("option", {{value: f.key}});
+    opt.textContent = f.label;
+    formSelect.appendChild(opt);
+  }});
+  formSelect.value = cfg.defaultFormation;
+  formGroup.appendChild(formLabel);
+  formGroup.appendChild(formSelect);
+
+  pickerRow.appendChild(teamGroup);
+  pickerRow.appendChild(formGroup);
+  container.appendChild(pickerRow);
+
+  const pitch = document.createElement("div");
+  pitch.className = "pitch";
+  container.appendChild(pitch);
+
+  const caption = document.createElement("p");
+  caption.className = "lineup-caption";
+  container.appendChild(caption);
+
+  function render() {{
+    pitch.innerHTML = "";
+    const abbr = teamSelect.value;
+    const formation = cfg.formations.find(f => f.key === formSelect.value);
+    const lineup = (cfg.lineups[abbr] || {{}})[formation.key];
+    if (!lineup) {{
+      caption.textContent = "No qualifying players for this team yet.";
+      return;
+    }}
+    formation.lines.forEach(line => {{
+      const row = document.createElement("div");
+      row.className = "pitch-row";
+      line.forEach(slot => {{
+        const pick = lineup.slots[slot.id];
+        const card = document.createElement("div");
+        card.className = "slot " + (pick
+          ? (pick.rating >= 0 ? "above" : "below") : "empty");
+        const pos = document.createElement("div");
+        pos.className = "slot-pos";
+        pos.textContent = slot.label;
+        card.appendChild(pos);
+        const name = document.createElement("div");
+        name.className = "slot-name" + (pick ? "" : " none");
+        // An empty slot says so. It is not filled from a position the slot
+        // does not accept, and it is not left blank either -- a blank card
+        // reads as a rendering bug rather than as a finding.
+        name.textContent = pick ? pick.name : "No qualifying player";
+        card.appendChild(name);
+        if (pick) {{
+          const value = document.createElement("div");
+          value.className = "slot-value" + (pick.rating < 0 ? " below" : "");
+          value.textContent = (pick.rating >= 0 ? "+" : "") + pick.rating.toFixed(2) + " g+/96";
+          card.appendChild(value);
+          const meta = document.createElement("div");
+          meta.className = "slot-meta";
+          meta.textContent = pick.position + " · " + pick.minutes + " min";
+          card.appendChild(meta);
+        }} else {{
+          const meta = document.createElement("div");
+          meta.className = "slot-meta";
+          meta.textContent = slot.eligible.join(" / ");
+          card.appendChild(meta);
+        }}
+        row.appendChild(card);
+      }});
+      pitch.appendChild(row);
+    }});
+
+    const teamFull = cfg.teamNames[abbr] || abbr;
+    if (lineup.filled === 0) {{
+      caption.textContent = teamFull + " have no player above the minutes floor at any position in a "
+        + formation.label + ".";
+    }} else if (lineup.filled < lineup.total) {{
+      caption.textContent = teamFull + " can fill " + lineup.filled + " of " + lineup.total
+        + " slots in a " + formation.label + ", averaging "
+        + (lineup.strength >= 0 ? "+" : "") + lineup.strength.toFixed(2)
+        + " goals added per 96 above replacement. The empty slots are positions where nobody has played enough this season to be judged.";
+    }} else {{
+      caption.textContent = teamFull + "'s strongest " + formation.label + " averages "
+        + (lineup.strength >= 0 ? "+" : "") + lineup.strength.toFixed(2)
+        + " goals added per 96 above replacement across all eleven slots.";
+    }}
+  }}
+
+  teamSelect.addEventListener("change", render);
+  formSelect.addEventListener("change", render);
+  render();
+}}
+
 // ---------- build tabs + panels ----------
 const tabsEl = document.getElementById("tabs");
 const panelsEl = document.getElementById("panels");
@@ -1324,6 +1669,9 @@ CHARTS.forEach((chart, i) => {{
   if (chart.type === "preset-compare") drawPresetCompare(mount, chart);
   if (chart.type === "position-grid") drawPositionGrid(mount, chart);
   if (chart.type === "shot-map") drawShotMap(mount, chart);
+  if (chart.type === "standings") drawStandings(mount, chart);
+  if (chart.type === "matchup") drawMatchup(mount, chart);
+  if (chart.type === "best-lineup") drawBestLineup(mount, chart);
   if (chart.type === "methods") drawMethods(mount, chart);
 }});
 </script>

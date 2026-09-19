@@ -16,7 +16,7 @@ numbers standing rather than half of today's.
 
 |  |  |
 |---|---|
-| **[Dashboard →](https://duransound.github.io/nwsl-dashboard/)** | 15 tabs, running from the league-wide picture down to individual finishing. Rebuilt every Tuesday by GitHub Actions. One self-contained HTML file — no server, no build step, no JavaScript dependencies. |
+| **[Dashboard →](https://duransound.github.io/nwsl-dashboard/)** | 18 tabs, opening on the league table and running from the league-wide picture down to individual finishing, then two exploratory tools. Rebuilt every Tuesday by GitHub Actions. One self-contained HTML file — no server, no build step, no JavaScript dependencies. |
 | **[Tableau Public →](https://public.tableau.com/app/profile/ian.duran/viz/nwsl-xg-difference/Placementvs_Luck)** | Three sheets off the same warehouse extracts: team xG difference, the league xGF/xGA quadrant, and Placement vs. Luck. |
 | **[Shiny app →](https://ianduran.shinyapps.io/nwsl-finishing-explorer/)** | The thresholds the dashboard bakes in at build time — the qualification bar, the shot floor — handed to the reader as controls, with the pool re-derived live from the ASA API on every change. Source in [`shiny/`](shiny/). |
 
@@ -535,6 +535,84 @@ build doesn't use yet); everything is a season aggregate with no rolling form
 window or match-by-match series; player scatters put every position on shared
 axes without position-relative percentiles; and there is no second xG source
 to triangulate against.
+
+## Round 39: Standings, Matchup Predictor and Best XI (2026-09-19)
+
+Three tabs that argue from results rather than from expected goals. Every
+other tab on this dashboard is xG work; these three are the counterweight, and
+the point of putting them on the same page is that they regularly disagree
+with it.
+
+**Standings** (`standings.py`) is the real league table, and it opens the
+dashboard — the one tab that needs no explanation, and the frame that makes
+every xG tab after it an argument about whether the table is telling the
+truth. `/teams/xgoals` publishes real `points`, `count_games`, `goals_for`,
+`goals_against` and `goal_difference`, so games played, points, goals and goal
+difference are exact, not modelled. Wins/draws/losses are not on that row and
+are **not recoverable from it** — W+D+L = GP and 3W+D = Pts is two equations
+in three unknowns — so there are two paths, and the page says which one ran:
+
+- If a per-game results feed answers (`/games/xgoals`, then `/games`), W/D/L
+  are counted from real scorelines and reconciled against ASA's own published
+  points; any team where the two disagree is printed at build time and named
+  in the tab's footnote.
+- If neither answers, the W/D/L columns are **dropped rather than blanked**,
+  and the footnote says why. One thing is still exactly derivable league-wide:
+  a decided match puts three points into the league and a draw puts two, so
+  `draws = 3 × matches − total points`. That number is arithmetic, not an
+  estimate, and it is surfaced.
+
+The lede is the team whose league position and xG-difference rank disagree
+most — the table's own most notable quarrel with the rest of the page.
+
+**Matchup Predictor** (`matchup_predictor.py`) is Elo, deliberately not an
+xG-driven Poisson model: an xG predictor would agree with the other tabs by
+construction and say nothing new. On the results path it is true game-by-game
+Elo (start 1500, K=20, 60 points of home advantage, FiveThirtyEight's
+margin-of-victory damping). With no results feed it falls back to a
+**documented approximation** — points per game (60%) and goal difference per
+game (40%), standardised and scaled at 80 Elo points per standard deviation —
+and the tab's own footnote opens with "These are not true Elo ratings."
+Calling both "Elo" would be exactly the failure the PLAYBOOK warns about.
+
+Three outcomes come from the Davidson (1970) ties model, whose single
+parameter is pinned to the season's own draw rate rather than assumed:
+`nu = 2d/(1−d)` makes an even matchup draw exactly `d` of the time, and `d` is
+available on both paths. Two team dropdowns plus a venue selector recompute in
+the browser; nothing round-trips.
+
+**Best XI** (`best_lineup.py`) picks the strongest available lineup for a team
+in a chosen shape, at **zero extra API calls** — it reuses the same
+above-replacement goals-added rows the Position Gaps grid already fetches.
+Four formations, with each slot declaring which of ASA's position buckets can
+fill it:
+
+| Slot | Accepts |
+|---|---|
+| GK | GK |
+| CB | CB |
+| FB | FB |
+| WB (3-5-2) | FB, W |
+| DM (4-2-3-1 pivot) | DM, CM |
+| MID | DM, CM, AM |
+| AM | AM, CM |
+| W | W, AM |
+| ST | ST |
+
+Formations: 4-3-3, 4-4-2, 4-2-3-1, 3-5-2. Slots are filled
+most-constrained-first, each taking the highest-rated unassigned qualifying
+player, with names breaking ties — so the same data always produces the same
+XI and a weekly rebuild never reshuffles for no reason. A player is considered
+at every position they logged minutes at but selected at most once. A slot
+with nobody qualifying renders **"No qualifying player"** rather than reaching
+into a bucket it doesn't accept: a team that has fielded one full back for 200
+minutes has not told us who their best full back is.
+
+Each module carries its own `__main__` self-test with the usual naming
+discipline — an unplayed fixture must not become a 0-0, the totals path must
+report W/D/L as absent rather than zero, probabilities must sum to one across
+the range, a 120-minute cameo must not take a slot from a season-long starter,
+and two builds of the same data must produce an identical XI.
 
 ## Automating the weekly refresh
 

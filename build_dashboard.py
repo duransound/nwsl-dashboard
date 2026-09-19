@@ -65,9 +65,14 @@ from chart_builders import (
     per96, rows_to_csv, scatter_display_params,
 )
 from chart_builders import qualification_phrase
+from chart_builders import (
+    build_best_lineup_chart, build_matchup_chart, build_standings_chart,
+)
 from dashboard_template import render_dashboard
 from glossary import GLOSSARY_SECTION
+import matchup_predictor
 import qualification
+import standings
 
 BASE_URL = "https://app.americansocceranalysis.com/api/v1/nwsl"
 
@@ -166,12 +171,61 @@ def fetch_team_charts(season, teams):
             # falls back to the league median inside Qualification rather
             # than being dropped.
             "games": r.get("count_games", r.get("games", r.get("games_played"))),
+            # Round 39: the Standings tab's real-results columns. Unlike
+            # `points` above these have been confirmed present on a live
+            # /teams/xgoals row (goals_for / goals_against / goal_difference /
+            # xgoal_difference / xpoints), but they are still read with .get()
+            # so a rename degrades one column instead of breaking the build --
+            # standings.build_table treats a None as absent, never as zero.
+            "team_id": r["team_id"],
+            "goals_for": r.get("goals_for"),
+            "goals_against": r.get("goals_against"),
+            "goal_difference": r.get("goal_difference"),
+            "xgd": r.get("xgoal_difference"),
+            "xpoints": r.get("xpoints"),
         }
         for r in rows
     ]
     # Returns team_rows as well so main() can build the MVP chart without a
     # second /teams/xgoals call.
     return build_team_charts(team_rows) + (team_rows,)
+
+
+# Per-game results endpoints, tried in this order. /games/xgoals is preferred
+# because it carries the scoreline AND the per-game xG on one row; /games is
+# the fallback. NEITHER IS CONFIRMED against this API -- they are the documented
+# shape, but no live call could be made from the environment this was written
+# in, so the code treats their existence as a hypothesis (PLAYBOOK section 7)
+# and every downstream tab has a path that works when both come back empty.
+RESULTS_ENDPOINTS = ["games/xgoals", "games"]
+
+
+def fetch_games(season):
+    """Real scorelines, or [] -- never an inference.
+
+    Returns (games, endpoint_used). A 404, a connection error, a non-list body
+    or a payload with no readable home/away scores all mean the same thing
+    here: no results feed answered, so the Standings tab drops its W/D/L
+    columns and the Matchup Predictor falls back to its table-based ratings
+    and says so on the page. Nothing is fabricated to fill the gap.
+    """
+    for endpoint in RESULTS_ENDPOINTS:
+        try:
+            resp = requests.get(f"{BASE_URL}/{endpoint}",
+                                params={"season_name": season}, timeout=30)
+            resp.raise_for_status()
+            games = standings.normalize_games(resp.json())
+        except Exception as exc:                          # noqa: BLE001
+            print(f"  !! /{endpoint} unavailable ({exc})")
+            continue
+        if games:
+            print(f"  -> /{endpoint} returned {len(games)} played matches")
+            return games, endpoint
+        print(f"  !! /{endpoint} answered but carried no readable scorelines")
+    print("  !! no per-game results feed answered; W/D/L will be shown as not "
+          "published and the Matchup Predictor will use its table-based "
+          "approximation (both are labelled as such on the page)")
+    return [], None
 
 
 def fetch_team_goals_added(season, teams):
@@ -607,6 +661,45 @@ def main():
               "games-scaled rule could not be applied and this build fell back to a "
               "flat floor. Check whether ASA renamed count_games.")
 
+    print(f"Fetching NWSL {args.season} results feed for the league table...")
+    games, results_endpoint = fetch_games(args.season)
+    table_rows, table_basis, reconciliation = standings.build_table(team_rows, games)
+    draws = standings.derived_league_draws(team_rows)
+    chart_standings = build_standings_chart(
+        table_rows, table_basis, reconciliation, draws, season=args.season)
+    if chart_standings:
+        leader = table_rows[0]
+        print(f"  -> table basis: {table_basis}; leader {leader['team']} "
+              f"({leader['pts']} pts from {leader['gp']} games)")
+        if draws:
+            print(f"     {draws[0]} of {draws[1]} matches drawn "
+                  f"(derived exactly from points and games played)")
+        for note in reconciliation:
+            print(f"     RECONCILE: {note}")
+
+    # Elo runs off the same results feed the table did, so the two tabs can
+    # never disagree about what happened. When no feed answered, the ratings
+    # are the documented table-based approximation instead and the tab's own
+    # footnote says so -- see matchup_predictor.py.
+    if games:
+        abbr_of = {t["team_id"]: t["abbr"] for t in team_rows if t.get("team_id")}
+        ratings, _history = matchup_predictor.elo_from_games(games, abbr_of)
+        draw_rate = matchup_predictor.draw_rate_from_games(games)
+    else:
+        ratings = matchup_predictor.elo_from_table(table_rows)
+        draw_rate = (draws[0] / draws[1]) if draws and draws[1] else None
+    chart_matchup = build_matchup_chart(
+        ratings, {t["abbr"]: t["name"] for t in team_rows},
+        matchup_predictor.nu_from_draw_rate(draw_rate), table_basis,
+        draw_rate=draw_rate, games_played=len(games) or None)
+    if chart_matchup:
+        top = max(ratings.items(), key=lambda kv: kv[1])
+        print(f"  -> {len(ratings)} teams rated ({table_basis} basis); "
+              f"strongest {top[0]} at {top[1]:.0f}, "
+              f"draw rate {draw_rate if draw_rate is None else f'{draw_rate:.0%}'}")
+    else:
+        print("  -> Matchup Predictor SKIPPED (fewer than two rated teams)")
+
     print(f"Fetching NWSL {args.season} team Goals Added data...")
     chart_team_ga = fetch_team_goals_added(args.season, teams)
 
@@ -667,6 +760,20 @@ def main():
             print(f"     widest hole: {worst['team']} at {worst['position']} "
                   f"({worst['value']:+.2f})")
 
+    # Zero extra API calls: the same rows_by_position the Position Gaps grid
+    # was just built from is exactly the per-player-per-position rating source
+    # an XI-picker needs.
+    print("Building Best XI from the position rows already fetched...")
+    chart_best_xi = build_best_lineup_chart(
+        rows_by_position, team_rows, players, minimum_minutes=qual)
+    if chart_best_xi is None:
+        print("  -> SKIPPED (no player clears the per-slot minutes floor)")
+    else:
+        fillable = sum(1 for t in chart_best_xi["lineups"].values()
+                       for lu in t.values() if lu["filled"] == lu["total"])
+        print(f"  -> {len(chart_best_xi['lineups'])} teams; {fillable} "
+              f"team/formation combinations can field a complete XI")
+
     print(f"Fetching NWSL {args.season} goalkeeper data...")
     chart_goalkeepers = build_goalkeeper_chart(args.season, qual, teams, players)
 
@@ -676,7 +783,13 @@ def main():
     # as a bug rather than as a filter. Keeps its own low 90-minute floor.
     chart_team_compare = fetch_team_compare_chart(args.season, 90, teams, players, ga_lookup)
 
-    charts = [chart_quadrant, chart_diff, chart_team_ga]
+    # Standings opens the dashboard: it is the one tab that needs no
+    # explanation, and it frames every xG tab after it as an argument about
+    # whether the table is telling the truth.
+    charts = []
+    if chart_standings:
+        charts.append(chart_standings)
+    charts += [chart_quadrant, chart_diff, chart_team_ga]
     if chart_set_piece:
         charts.append(chart_set_piece)
     if chart_positions:
@@ -699,6 +812,13 @@ def main():
     if chart_goalkeepers:
         charts.append(chart_goalkeepers)
     charts.append(chart_team_compare)
+    # The two exploratory tools go after the findings: a reader should meet
+    # what the season actually shows before being handed a toy to poke at it
+    # with. Both stay ahead of Methods & Data, which is always last.
+    if chart_matchup:
+        charts.append(chart_matchup)
+    if chart_best_xi:
+        charts.append(chart_best_xi)
 
     # Methods goes last on purpose. It is the tab a reader opens to check
     # something they've already seen, not the one they open first, and putting
